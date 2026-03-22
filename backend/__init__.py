@@ -1,0 +1,1 @@
+"""MINERVA backend package."""

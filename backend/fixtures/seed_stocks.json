@@ -1,0 +1,110 @@
+[
+  {
+    "ticker": "MP",
+    "company_name": "MP Materials",
+    "primary_mineral": "Rare Earths (NdPr, HRE)",
+    "value_chain_stage": "integrated",
+    "country": "United States",
+    "exchange": "NYSE",
+    "revenue_status": "GENERATING",
+    "dilution_risk": "LOW",
+    "competitive_position": "Only domestic integrated rare earth mine-to-magnet chain",
+    "key_risk": "Execution timing on downstream magnetics scale-up"
+  },
+  {
+    "ticker": "UUUU",
+    "company_name": "Energy Fuels",
+    "primary_mineral": "Uranium + Rare Earths",
+    "value_chain_stage": "processing",
+    "country": "United States",
+    "exchange": "NYSE",
+    "revenue_status": "GENERATING",
+    "dilution_risk": "LOW",
+    "competitive_position": "U.S. processor with uranium cashflow support",
+    "key_risk": "Separation and monetization milestones take longer than expected"
+  },
+  {
+    "ticker": "USAR",
+    "company_name": "USA Rare Earth",
+    "primary_mineral": "Rare Earths, Gallium, Lithium",
+    "value_chain_stage": "integrated",
+    "country": "United States",
+    "exchange": "NASDAQ",
+    "revenue_status": "EARLY_REVENUE",
+    "dilution_risk": "MEDIUM",
+    "competitive_position": "Domestic integrated magnet manufacturing exposure",
+    "key_risk": "Commercial contract timing and balance sheet depth"
+  },
+  {
+    "ticker": "UAMY",
+    "company_name": "United States Antimony",
+    "primary_mineral": "Antimony",
+    "value_chain_stage": "processing",
+    "country": "United States",
+    "exchange": "NYSE",
+    "revenue_status": "GENERATING",
+    "dilution_risk": "MEDIUM",
+    "competitive_position": "Scarce U.S. antimony processing exposure",
+    "key_risk": "Operational execution and feedstock reliability"
+  },
+  {
+    "ticker": "PPTA",
+    "company_name": "Perpetua Resources",
+    "primary_mineral": "Antimony, Gold",
+    "value_chain_stage": "mining",
+    "country": "United States",
+    "exchange": "NASDAQ",
+    "revenue_status": "PRE_REVENUE",
+    "dilution_risk": "HIGH",
+    "competitive_position": "Strategic U.S. antimony project with strong policy relevance",
+    "key_risk": "Financing and permitting path remains complex"
+  },
+  {
+    "ticker": "NB",
+    "company_name": "NioCorp Developments",
+    "primary_mineral": "Scandium, Niobium, Titanium",
+    "value_chain_stage": "mining",
+    "country": "United States",
+    "exchange": "NASDAQ",
+    "revenue_status": "PRE_REVENUE",
+    "dilution_risk": "HIGH",
+    "competitive_position": "Unique polymetallic U.S. strategic minerals project",
+    "key_risk": "Project funding and development timeline"
+  },
+  {
+    "ticker": "METC",
+    "company_name": "Ramaco Resources",
+    "primary_mineral": "Rare Earths (from coal)",
+    "value_chain_stage": "mining",
+    "country": "United States",
+    "exchange": "NASDAQ",
+    "revenue_status": "GENERATING",
+    "dilution_risk": "LOW",
+    "competitive_position": "Coal cashflow plus critical minerals optionality",
+    "key_risk": "Critical minerals thesis may stay narrative longer than expected"
+  },
+  {
+    "ticker": "ALM",
+    "company_name": "Almonty Industries",
+    "primary_mineral": "Tungsten",
+    "value_chain_stage": "mining",
+    "country": "South Korea / Portugal / United States",
+    "exchange": "NASDAQ",
+    "revenue_status": "EARLY_REVENUE",
+    "dilution_risk": "MEDIUM",
+    "competitive_position": "Strategic tungsten supply outside China",
+    "key_risk": "Ramp execution and geopolitical concentration"
+  },
+  {
+    "ticker": "AXTI",
+    "company_name": "AXT Inc",
+    "primary_mineral": "Gallium Arsenide, Indium Phosphide",
+    "value_chain_stage": "manufacturing",
+    "country": "United States",
+    "exchange": "NASDAQ",
+    "revenue_status": "GENERATING",
+    "dilution_risk": "MINIMAL",
+    "competitive_position": "Specialty compound semiconductor materials manufacturing",
+    "key_risk": "Cyclic end-market demand and China-linked supply inputs"
+  }
+]
