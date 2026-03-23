@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -13,6 +14,17 @@ from ..parsers.frontier_output import parse_frontier_output
 from .agent_executor import OllamaClient, execute_agent
 from .local_review import run_local_review
 from .task_generator import generate_tasks
+
+
+def _parse_conviction(value) -> Optional[int]:
+    """Safely parse conviction from LLM output like '8', '8/10', 'HIGH' etc."""
+    if value is None:
+        return None
+    m = re.search(r"\d+", str(value))
+    if m:
+        v = int(m.group())
+        return min(max(v, 1), 10)
+    return None
 
 
 def generate_run_id(ticker: str) -> str:
@@ -77,7 +89,7 @@ async def ingest_frontier_review(conn, run_id: str, ticker: str, source_model: s
         (
             parsed.get("final_verdict"),
             parsed.get("final_action"),
-            int(parsed["final_conviction"]) if parsed.get("final_conviction") else None,
+            _parse_conviction(parsed.get("final_conviction")),
             parsed.get("entry_low"),
             parsed.get("entry_high"),
             parsed.get("stop_loss"),
@@ -102,7 +114,7 @@ async def ingest_frontier_review(conn, run_id: str, ticker: str, source_model: s
         (
             parsed.get("final_verdict"),
             parsed.get("final_action"),
-            int(parsed["final_conviction"]) if parsed.get("final_conviction") else None,
+            _parse_conviction(parsed.get("final_conviction")),
             parsed.get("one_line_summary"),
             parsed.get("stop_loss"),
             parsed.get("target_price"),

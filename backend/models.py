@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -265,7 +265,7 @@ class TradingJournalCreate(BaseModel):
     planned_timeframe: Optional[str] = None
     tripwire_invalidates: Optional[str] = None
     tripwire_confirms: Optional[str] = None
-    exit_reason: Optional[str] = None
+    exit_reason: Optional[Literal["TARGET_HIT", "STOP_HIT", "THESIS_INVALIDATED", "TIME_EXPIRED", "PARTIAL_TAKE", "UPGRADED", "DOWNGRADED", "FORCED"]] = None
     what_went_right: Optional[str] = None
     what_went_wrong: Optional[str] = None
     what_to_do_differently: Optional[str] = None
