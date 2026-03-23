@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, AsyncGenerator, Iterable, List, Mapping, Optional, Sequence
 
@@ -350,7 +351,7 @@ ADDITIONAL_COLUMNS = {
 
 
 async def connect(db_path: Optional[Path] = None) -> aiosqlite.Connection:
-    path = db_path or settings.database_path
+    path = db_path or Path(os.getenv("MINERVA_DB_PATH", str(settings.database_path)))
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(path)
     conn.row_factory = aiosqlite.Row

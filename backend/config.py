@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -14,7 +14,7 @@ PROMPTS_DIR = ROOT_DIR / "prompts"
 class Settings:
     app_name: str = "MINERVA"
     debug: bool = os.getenv("MINERVA_DEBUG", "0") == "1"
-    database_path: Path = Path(os.getenv("MINERVA_DB_PATH", str(DATA_DIR / "minerva.db")))
+    database_path: Path = field(default_factory=lambda: Path(os.getenv("MINERVA_DB_PATH", str(DATA_DIR / "minerva.db"))))
     ollama_url: str = os.getenv("MINERVA_OLLAMA_URL", "http://localhost:11434/api/chat")
     ollama_model: str = os.getenv("MINERVA_OLLAMA_MODEL", "qwen3.5:latest")
     ollama_temperature: float = float(os.getenv("MINERVA_OLLAMA_TEMPERATURE", "0.3"))
