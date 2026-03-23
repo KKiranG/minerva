@@ -80,20 +80,41 @@ export default function StockDetail({ api, ticker }) {
   const research = useAsyncResource((signal) => api.getResearch({ ticker, signal }), [ticker]);
   const journal = useAsyncResource((signal) => api.getJournal({ ticker, signal }), [ticker]);
 
+  const data = stock.data;
+  const currentCatalysts = useMemo(() => (catalysts.data || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))), [catalysts.data]);
+  const currentEvents = useMemo(() => (events.data || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))), [events.data]);
+  const currentTrail = useMemo(() => normalizeTrail(trail.data || []), [trail.data]);
+  const currentHistory = history.data || [];
+
+  const governmentFundingRows = useMemo(() => {
+    const fromCatalysts = governmentFundingFromCatalysts(currentCatalysts);
+    if (fromCatalysts.length) return fromCatalysts;
+    return Array.isArray(data?.government_funding) ? data.government_funding : [];
+  }, [currentCatalysts, data?.government_funding]);
+
+  const convictionSeries = useMemo(() => {
+    const runs = currentHistory
+      .slice()
+      .reverse()
+      .map((run) => Number(run.final_conviction))
+      .filter((value) => !Number.isNaN(value));
+    if (runs.length) return runs;
+    return currentTrail
+      .slice()
+      .reverse()
+      .map((item) => Number(item.conviction))
+      .filter((value) => !Number.isNaN(value));
+  }, [currentHistory, currentTrail]);
+
   if (stock.status === 'loading' || stock.status === 'idle') return <LoadingState rows={6} />;
   if (stock.status === 'error') return <ErrorState description={stock.error} retry={<button className="button button-primary">Retry</button>} />;
-  if (!stock.data) {
+  if (!data) {
     return <EmptyState title="Stock not found" description={`We could not load ${ticker}. Try another seeded ticker like MP or UUUU.`} />;
   }
 
-  const data = stock.data;
   const currentTicker = data.ticker || ticker;
-  const currentCatalysts = (catalysts.data || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  const currentEvents = (events.data || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   const currentResearch = research.data || [];
   const currentJournal = journal.data || [];
-  const currentTrail = normalizeTrail(trail.data || []);
-  const currentHistory = history.data || [];
   const latestRun = currentHistory[0] || null;
   const priceSnapshot = latestPrice.data || null;
 
@@ -111,26 +132,6 @@ export default function StockDetail({ api, ticker }) {
     alertFlag: data.alert_flag,
     openPositionFlag: data.open_position_flag
   };
-
-  const governmentFundingRows = useMemo(() => {
-    const fromCatalysts = governmentFundingFromCatalysts(currentCatalysts);
-    if (fromCatalysts.length) return fromCatalysts;
-    return Array.isArray(data.government_funding) ? data.government_funding : [];
-  }, [currentCatalysts, data.government_funding]);
-
-  const convictionSeries = useMemo(() => {
-    const runs = currentHistory
-      .slice()
-      .reverse()
-      .map((run) => Number(run.final_conviction))
-      .filter((value) => !Number.isNaN(value));
-    if (runs.length) return runs;
-    return currentTrail
-      .slice()
-      .reverse()
-      .map((item) => Number(item.conviction))
-      .filter((value) => !Number.isNaN(value));
-  }, [currentHistory, currentTrail]);
 
   return (
     <div className="stack">

@@ -124,5 +124,17 @@ async def execute_run(run_id: str):
         result = await run_execution(conn, run_id)
         row = await fetch_one(conn, "SELECT * FROM analysis_runs WHERE run_id = ?", (run_id,))
         return {"run": row, "execution": result}
+    except Exception as exc:
+        # Ensure run doesn't stay stuck in RUNNING status on failure
+        try:
+            from ..database import execute as db_execute
+            await db_execute(
+                conn,
+                "UPDATE analysis_runs SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP WHERE run_id = ?",
+                (run_id,),
+            )
+        except Exception:
+            pass
+        raise exc
     finally:
         await conn.close()

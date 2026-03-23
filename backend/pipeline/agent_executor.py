@@ -16,6 +16,7 @@ class OllamaClient:
         payload = {
             "model": settings.ollama_model,
             "stream": False,
+            "think": settings.ollama_think,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

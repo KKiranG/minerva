@@ -4,7 +4,13 @@
       "Bash(python3 -m venv .venv)",
       "Bash(source .venv/bin/activate)",
       "Bash(pip install:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(python3 scripts/seed_stocks.py)",
+      "Bash(curl:*)",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 scripts/run_agents.py --help)",
+      "Bash(MINERVA_OLLAMA_MODEL=qwen3.5:9b source .venv/bin/activate)",
+      "Bash(python3 scripts/run_agents.py --ticker MP --generate-tasks)"
     ]
   }
 }

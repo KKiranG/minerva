@@ -38,7 +38,7 @@ async def create_journal_entry(payload: TradingJournalCreate):
                 thesis, outcome, planned_timeframe, tripwire_invalidates, tripwire_confirms,
                 exit_reason, what_went_right, what_went_wrong, what_to_do_differently,
                 holding_days, pattern_tags, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.ticker.upper(),
