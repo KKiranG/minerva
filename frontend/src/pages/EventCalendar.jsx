@@ -1,103 +1,73 @@
 import React, { useMemo, useState } from 'react';
-import { seedUniverse } from '../api';
+import { EmptyState, ExpandableCard, PageSection, Select } from '../components/Common';
 import useAsyncResource from '../hooks/useAsyncResource';
-import { Badge, EmptyState, ErrorState, ExpandableCard, LoadingState, Section } from '../components/Common';
-import { asDate, asRelativeDate } from '../utils/formatters';
-
-const impactTone = (impact) => {
-  const upper = String(impact || '').toUpperCase();
-  if (upper === 'HIGH') return 'danger';
-  if (upper === 'MEDIUM') return 'warning';
-  return 'neutral';
-};
-
-const daysUntilLabel = (value) => {
-  if (!value) return 'Date unknown';
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const eventDate = new Date(value);
-  eventDate.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((eventDate.getTime() - today.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays > 0) return `${diffDays} day${diffDays === 1 ? '' : 's'} until`;
-  const elapsed = Math.abs(diffDays);
-  return `${elapsed} day${elapsed === 1 ? '' : 's'} ago`;
-};
+import { asDate, asRelativeDate, countdownLabel, parseDate } from '../utils/formatters';
 
 export default function EventCalendar({ api, stocks = [] }) {
-  const [ticker, setTicker] = useState('MP');
-  const events = useAsyncResource((signal) => api.getEvents({ ticker, signal }), [ticker]);
-  const universe = stocks.length ? stocks : seedUniverse;
+  const [ticker, setTicker] = useState('ALL');
+  const resource = useAsyncResource(
+    (signal) => api.getEvents({ ticker: ticker === 'ALL' ? undefined : ticker, limit: 200, signal }),
+    [ticker]
+  );
 
-  const sorted = useMemo(() => {
-    const rows = events.data || [];
-    return rows.slice().sort((a, b) => a.date.localeCompare(b.date));
-  }, [events.data]);
+  const sorted = useMemo(
+    () =>
+      (resource.data || [])
+        .slice()
+        .sort((left, right) => (parseDate(left.date)?.getTime() || Number.MAX_SAFE_INTEGER) - (parseDate(right.date)?.getTime() || Number.MAX_SAFE_INTEGER)),
+    [resource.data]
+  );
 
   return (
-    <Section
+    <PageSection
       title="Event calendar"
-      subtitle="Upcoming events, countdowns, and scenario framing for the selected ticker."
+      subtitle="Date parsing is normalized here, so countdowns and ordering stay correct even if backend dates vary."
       action={
-        <select className="toolbar-select" value={ticker} onChange={(event) => setTicker(event.target.value)}>
-          {universe.map((stock) => (
-            <option key={stock.ticker} value={stock.ticker}>
-              {stock.ticker}
-            </option>
-          ))}
-        </select>
+        <Select value={ticker} onChange={(event) => setTicker(event.target.value)}>
+          <option value="ALL">All tickers</option>
+          {stocks.map((stock) => <option key={stock.ticker} value={stock.ticker}>{stock.ticker}</option>)}
+        </Select>
       }
     >
-      {events.status === 'loading' || events.status === 'idle' ? (
-        <LoadingState rows={4} />
-      ) : events.status === 'error' ? (
-        <ErrorState description={events.error} />
+      {resource.status === 'loading' || resource.status === 'idle' ? (
+        <div className="space-y-3">
+          <div className="h-4 animate-pulse rounded-full bg-white/10" />
+          <div className="h-4 animate-pulse rounded-full bg-white/10" />
+        </div>
+      ) : resource.status === 'error' ? (
+        <EmptyState title="Calendar unavailable" description={resource.error} />
       ) : sorted.length ? (
-        <div className="stack">
+        <div className="space-y-3">
           {sorted.map((event) => (
             <ExpandableCard
               key={event.id}
               title={event.description}
               subtitle={`${asDate(event.date)} • ${asRelativeDate(event.date)}`}
-              badge={event.event_type}
-              badgeTone={impactTone(event.impact)}
-              preview={`${daysUntilLabel(event.date)} ${event.date ? event.event_type?.toLowerCase() || 'event' : 'event'} window.`}
+              badge={event.event_type || 'EVENT'}
+              badgeTone={event.impact === 'HIGH' ? 'danger' : event.impact === 'MEDIUM' ? 'warning' : 'neutral'}
+              preview={countdownLabel(event.date, event.event_type || 'event')}
               meta={[
-                <span key="impact">Impact {event.impact || 'UNKNOWN'}</span>,
+                <span key="ticker">{event.ticker}</span>,
+                <span key="impact">{event.impact || 'UNKNOWN'} impact</span>,
                 <span key="status">{event.status || 'UPCOMING'}</span>,
-                event.date_precision ? <span key="precision">Precision {event.date_precision}</span> : null,
-                event.source ? <span key="source">{event.source}</span> : null
-              ].filter(Boolean)}
+              ]}
             >
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Badge tone="positive">Bull case</Badge>
-                    <span className="text-xs uppercase tracking-[0.22em] text-emerald-200/70">{daysUntilLabel(event.date)}</span>
-                  </div>
-                  <p className="m-0 text-sm leading-6 text-slate-200">{event.bull_case || 'No explicit bull case was stored for this event yet.'}</p>
+                <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+                  <div className="mb-2 text-xs uppercase tracking-[0.22em] text-emerald-100">Bull case</div>
+                  <p className="text-sm leading-6 text-emerald-50">{event.bull_case || 'No explicit bull-case framing stored yet.'}</p>
                 </div>
-                <div className="rounded-2xl border border-rose-400/15 bg-rose-400/5 p-4">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Badge tone="danger">Bear case</Badge>
-                    <span className="text-xs uppercase tracking-[0.22em] text-rose-200/70">{event.impact || 'UNKNOWN'} impact</span>
-                  </div>
-                  <p className="m-0 text-sm leading-6 text-slate-200">{event.bear_case || 'No explicit bear case was stored for this event yet.'}</p>
+                <div className="rounded-3xl border border-rose-400/20 bg-rose-400/10 p-4">
+                  <div className="mb-2 text-xs uppercase tracking-[0.22em] text-rose-100">Bear case</div>
+                  <p className="text-sm leading-6 text-rose-50">{event.bear_case || 'No explicit bear-case framing stored yet.'}</p>
                 </div>
               </div>
-              {event.outcome ? (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <div className="mb-2 text-xs uppercase tracking-[0.22em] text-slate-400">Outcome</div>
-                  <p className="m-0 text-sm leading-6 text-slate-200">{event.outcome}</p>
-                  {event.outcome_date ? <div className="mt-2 text-sm text-slate-400">{asDate(event.outcome_date)}</div> : null}
-                </div>
-              ) : null}
             </ExpandableCard>
           ))}
         </div>
       ) : (
-        <EmptyState title="No events yet" description={`No upcoming events returned for ${ticker}.`} />
+        <EmptyState title="No events yet" description="No upcoming events matched this filter." />
       )}
-    </Section>
+    </PageSection>
   );
 }

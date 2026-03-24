@@ -1,255 +1,84 @@
 import React from 'react';
+import { Badge, EmptyState, LoadingState, MetricCard, PageSection } from '../components/Common';
 import useAsyncResource from '../hooks/useAsyncResource';
-import {
-  Badge,
-  ConvictionDots,
-  DataTable,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  MetricCard,
-  Section,
-  Sparkline,
-  asCurrency,
-  asDate,
-  asPercent,
-  asRelativeDate,
-  verdictTone
-} from '../components/Common';
-
-const getDailyChangePct = (row) => row.daily_change_pct ?? row.daily_change_percent ?? null;
-
-const getDailyChangeAmount = (row) => {
-  if (row.daily_change_amount !== null && row.daily_change_amount !== undefined) return Number(row.daily_change_amount);
-  const pct = Number(getDailyChangePct(row));
-  const currentPrice = Number(row.current_price);
-  if (Number.isNaN(pct) || Number.isNaN(currentPrice) || pct === -100) return null;
-  const previousClose = currentPrice / (1 + pct / 100);
-  return currentPrice - previousClose;
-};
-
-const signedCurrency = (value) => {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  const prefix = Number(value) > 0 ? '+' : '';
-  return `${prefix}${asCurrency(value)}`;
-};
-
-const changeTone = (value) => {
-  if (Number(value) > 0) return 'positive';
-  if (Number(value) < 0) return 'danger';
-  return 'neutral';
-};
-
-const attentionLabel = (row) => {
-  if (row.alert_flag) return 'Alert';
-  if (row.changed_since_last_analysis) return 'Changed';
-  if (row.needs_attention) return 'Watch';
-  return 'Clear';
-};
-
-const nextEventLabel = (row) => {
-  if (!row.next_event_date && !row.next_event_type) return 'No event scheduled';
-  if (!row.next_event_date) return row.next_event_type || 'Upcoming event';
-  if (!row.next_event_type) return asDate(row.next_event_date);
-  return `${row.next_event_type} • ${asDate(row.next_event_date)}`;
-};
+import { actionTone, asCurrency, asDate, asPercent, convictionLabel, verdictTone } from '../utils/formatters';
 
 export default function Overview({ api }) {
-  const overview = useAsyncResource(() => api.getDashboardOverview(), []);
+  const overview = useAsyncResource((signal) => api.getOverview({ signal }), []);
 
   if (overview.status === 'loading' || overview.status === 'idle') return <LoadingState rows={6} />;
-  if (overview.status === 'error') return <ErrorState description={overview.error} retry={<button className="button button-primary">Retry</button>} />;
+  if (overview.status === 'error') {
+    return <EmptyState title="Dashboard unavailable" description={overview.error} />;
+  }
 
   const rows = overview.data?.stocks || [];
   if (!rows.length) {
-    return <EmptyState title="No dashboard data" description="The dashboard will populate after the backend or mock fallback responds." />;
+    return (
+      <EmptyState
+        title="No dashboard data yet"
+        description="Seed the stock universe or create a tracked stock, then ingest a MINERVA report to populate the overview."
+      />
+    );
   }
 
-  const alerts = rows.filter((row) => row.alert_flag || row.changed_since_last_analysis).length;
-  const activeCatalysts = rows.reduce((sum, row) => sum + Number(row.active_catalyst_count || 0), 0);
-  const bullish = rows.filter((row) => String(row.current_verdict || '').toUpperCase() === 'BULLISH').length;
+  const alerts = rows.filter((row) => row.alert_flag).length;
+  const attention = rows.filter((row) => row.needs_attention).length;
   const openPositions = rows.filter((row) => row.open_position_flag).length;
-  const recentlyReviewed = rows.filter((row) => {
-    const timestamp = row.last_analysis_date ? new Date(row.last_analysis_date).getTime() : 0;
-    return Date.now() - timestamp <= 1000 * 60 * 60 * 72;
-  }).length;
-  const topTicker = rows[0];
-  const sparklineValues = rows.map((row) => Number(row.current_price || 0));
 
   return (
-    <div className="stack">
-      <section className="hero">
-        <div className="row">
-          <div className="stack">
-            <Badge tone="positive">Nine-name review universe</Badge>
-            <h1 className="page-title">Monitor decision quality across the live strategic-minerals board.</h1>
-            <p className="muted">
-              The overview now tracks current price, daily change, next event timing, active high-significance catalysts,
-              last review freshness, and alert state across MP, UUUU, USAR, UAMY, PPTA, NB, METC, ALM, and AXTI.
-            </p>
-          </div>
-          <div style={{ minWidth: 280 }} className="stack">
-            <div className="muted">Universe pulse</div>
-            <Sparkline values={sparklineValues} />
-            <div className="meta">
-              <span>Generated {asDate(overview.data.generated_at)}</span>
-              <span>Top priority {topTicker.ticker}</span>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard label="Alert flags" value={alerts} caption={alerts ? 'Active' : 'Clear'} tone={alerts ? 'danger' : 'positive'} />
+        <MetricCard label="Needs attention" value={attention} caption={attention ? 'Review queue' : 'Fresh'} tone={attention ? 'warning' : 'positive'} />
+        <MetricCard label="Open positions" value={openPositions} caption={openPositions ? 'Managed' : 'Flat'} tone={openPositions ? 'info' : 'neutral'} />
+      </div>
 
-        <div className="metric-grid">
-          <MetricCard label="Alert flags" value={alerts} caption="Names needing attention" tone="danger" />
-          <MetricCard label="High-significance catalysts" value={activeCatalysts} caption="Active catalyst stack" tone="warning" />
-          <MetricCard label="Bullish verdicts" value={bullish} caption="Constructive setups" tone="positive" />
-          <MetricCard label="Open positions" value={openPositions} caption="Names with active risk" tone="neutral" />
-          <MetricCard label="Reviewed in 72h" value={recentlyReviewed} caption="Fresh analysis cadence" tone="neutral" />
-        </div>
-      </section>
-
-      <Section title="Decision board" subtitle="Updated overview fields with event timing, catalyst weight, and review freshness.">
-        <DataTable
-          rows={rows}
-          rowKey={(row) => row.ticker}
-          emptyMessage="No dashboard rows were returned."
-          columns={[
-            {
-              key: 'ticker',
-              label: 'Ticker',
-              render: (row) => (
-                <a href={`#/stocks/${row.ticker}`} className="flex min-w-[110px] flex-col gap-1">
-                  <strong>{row.ticker}</strong>
-                  <span className="helper-text">{row.company_name}</span>
-                </a>
-              )
-            },
-            {
-              key: 'current_price',
-              label: 'Current price',
-              render: (row) => (
-                <div className="stack">
-                  <strong>{asCurrency(row.current_price)}</strong>
-                  <Badge tone={changeTone(getDailyChangeAmount(row) ?? getDailyChangePct(row))}>
-                    {signedCurrency(getDailyChangeAmount(row))} · {asPercent(getDailyChangePct(row))}
-                  </Badge>
-                </div>
-              )
-            },
-            {
-              key: 'decision',
-              label: 'Decision',
-              render: (row) => (
-                <div className="stack">
-                  <div className="row">
-                    <Badge tone={verdictTone(row.current_verdict)}>{row.current_verdict || '—'}</Badge>
-                    <span className="helper-text">{row.current_action || '—'}</span>
-                  </div>
-                  <ConvictionDots value={row.current_conviction} />
-                </div>
-              )
-            },
-            {
-              key: 'next_event',
-              label: 'Next event',
-              render: (row) => (
-                <div className="stack">
-                  <strong>{row.next_event_type || 'No event'}</strong>
-                  <span className="helper-text">
-                    {row.next_event_date ? `${asDate(row.next_event_date)} · ${asRelativeDate(row.next_event_date)}` : 'No date set'}
-                  </span>
-                </div>
-              )
-            },
-            {
-              key: 'active_catalyst_count',
-              label: 'High-significance catalysts',
-              render: (row) => row.active_catalyst_count ?? 0
-            },
-            {
-              key: 'last_analysis_date',
-              label: 'Last analysis',
-              render: (row) => (
-                <div className="stack">
-                  <strong>{row.last_analysis_date ? asDate(row.last_analysis_date) : '—'}</strong>
-                  <span className="helper-text">{row.last_analysis_date ? asRelativeDate(row.last_analysis_date) : 'Not reviewed'}</span>
-                </div>
-              )
-            },
-            {
-              key: 'alert_flag',
-              label: 'Attention',
-              render: (row) => (
-                <Badge tone={row.alert_flag ? 'danger' : row.changed_since_last_analysis || row.needs_attention ? 'warning' : 'neutral'}>
-                  {attentionLabel(row)}
-                </Badge>
-              )
-            }
-          ]}
-        />
-      </Section>
-
-      <Section title="Focus cards" subtitle="Fast scan cards for the highest-signal names on the board.">
-        <div className="catalog-grid">
-          {rows.map((row) => (
+      <PageSection
+        title="Which stocks need attention"
+        subtitle="Rows are fully clickable. Verdict, conviction, alert state, catalysts, and next events all route directly into the stock workspace."
+      >
+        <div className="space-y-3">
+          {rows.map((stock) => (
             <a
-              key={row.ticker}
-              href={`#/stocks/${row.ticker}`}
-              className="workspace-card flex flex-col gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-5 transition hover:border-sky-300/30"
+              key={stock.ticker}
+              href={`#/stocks/${stock.ticker}`}
+              className="block rounded-[28px] border border-white/10 bg-white/[0.035] p-5 transition hover:border-sky-300/20 hover:bg-white/[0.055]"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="text-lg font-semibold text-white">{row.ticker}</div>
-                  <div className="text-sm text-slate-400">{row.company_name}</div>
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-xl font-semibold tracking-tight text-white">{stock.ticker}</div>
+                    <div className="text-sm text-slate-300">{stock.company_name}</div>
+                    <Badge tone={verdictTone(stock.current_verdict)}>{stock.current_verdict || 'No verdict'}</Badge>
+                    <Badge tone={actionTone(stock.current_action)}>{stock.current_action || 'No action'}</Badge>
+                    {stock.alert_flag ? <Badge tone="danger">Alert</Badge> : null}
+                    {stock.needs_attention ? <Badge tone="warning">Needs attention</Badge> : null}
+                    {stock.changed_since_last_analysis ? <Badge tone="info">Changed</Badge> : null}
+                  </div>
+                  <p className="max-w-3xl text-sm leading-6 text-slate-300">{stock.one_line_summary || 'No one-line summary stored yet.'}</p>
                 </div>
-                <Badge tone={row.alert_flag ? 'danger' : verdictTone(row.current_verdict)}>{row.alert_flag ? 'Alert' : row.current_verdict || '—'}</Badge>
-              </div>
-
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <div className="text-2xl font-semibold text-white">{asCurrency(row.current_price)}</div>
-                  <div
-                    className={`text-sm ${
-                      changeTone(getDailyChangeAmount(row) ?? getDailyChangePct(row)) === 'positive'
-                        ? 'text-emerald-300'
-                        : changeTone(getDailyChangeAmount(row) ?? getDailyChangePct(row)) === 'danger'
-                          ? 'text-rose-300'
-                          : 'text-slate-300'
-                    }`}
-                  >
-                    {signedCurrency(getDailyChangeAmount(row))} · {asPercent(getDailyChangePct(row))}
+                <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[420px] xl:grid-cols-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Price</div>
+                    <div className="mt-2 text-lg font-semibold text-white">{asCurrency(stock.current_price)}</div>
+                    <div className="text-sm text-slate-300">{asPercent(stock.daily_change_pct)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Conviction</div>
+                    <div className="mt-2 text-lg font-semibold text-white">{convictionLabel(stock.current_conviction)}</div>
+                    <div className="text-sm text-slate-300">{stock.open_position_flag ? 'Open position' : 'No position'}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Catalysts / next event</div>
+                    <div className="mt-2 text-lg font-semibold text-white">{stock.active_catalyst_count}</div>
+                    <div className="text-sm text-slate-300">{stock.next_event_date ? `${asDate(stock.next_event_date)} • ${stock.next_event_type || 'Event'}` : 'No event scheduled'}</div>
                   </div>
                 </div>
-                <ConvictionDots value={row.current_conviction} />
               </div>
-
-              <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/10 p-4 text-sm text-slate-300">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-400">Next event</span>
-                  <span className="text-right">{nextEventLabel(row)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-400">Catalysts</span>
-                  <span>{row.active_catalyst_count || 0} active</span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-400">Last analysis</span>
-                  <span>{row.last_analysis_date ? asRelativeDate(row.last_analysis_date) : 'Not reviewed'}</span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-400">Attention</span>
-                  <span>{attentionLabel(row)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-400">Position</span>
-                  <span>{row.open_position_flag ? 'Open' : 'Flat'}</span>
-                </div>
-              </div>
-
-              <p className="m-0 text-sm leading-6 text-slate-300">{row.one_line_summary || 'No summary available.'}</p>
             </a>
           ))}
         </div>
-      </Section>
+      </PageSection>
     </div>
   );
 }

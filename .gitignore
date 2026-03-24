@@ -1,0 +1,19 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend build and dependencies
+frontend/node_modules/
+frontend/dist/
+
+# Local data artifacts
+data/minerva.db
+data/agent_outputs/RUN_*/
+data/tasks/RUN_*/
+
+# Local environments
+.venv/
+venv/

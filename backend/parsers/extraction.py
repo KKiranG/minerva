@@ -1,97 +1,130 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional
 
 from ..models import AGENT_ONE_BINDING_MAP
 
 
-APPENDIX_ALIASES = {
-    "NEW_CATALYSTS": ["NEW_CATALYSTS", "#### NEW_CATALYSTS", "NEW_CATALYSTS table:", "NEW_CATALYSTS table"],
-    "PRICE_SNAPSHOTS": ["PRICE_SNAPSHOTS", "#### PRICE_SNAPSHOTS", "PRICE_SNAPSHOTS table:", "PRICE_SNAPSHOTS table"],
-    "UPCOMING_EVENTS": ["UPCOMING_EVENTS", "#### UPCOMING_EVENTS", "UPCOMING_EVENTS table:", "UPCOMING_EVENTS table"],
-    "OPTIONS_NOTABLE": ["OPTIONS_NOTABLE", "#### OPTIONS_NOTABLE", "OPTIONS_NOTABLE table:", "OPTIONS_NOTABLE table"],
-    "SENTIMENT_SIGNALS": ["SENTIMENT_SIGNALS", "#### SENTIMENT_SIGNALS", "SENTIMENT_SIGNALS table:", "SENTIMENT_SIGNALS table"],
-}
+SECTION_MARKERS = [
+    "## MINERVA_REPORT",
+    "## NARRATIVE",
+    "## DECISION",
+    "## CATALYSTS",
+    "## PRICE_DATA",
+    "## EVENTS",
+    "## OPTIONS",
+    "## TRIPWIRES",
+    "## NOTES",
+]
 
-FIELD_ALIASES = {
-    "amount_usd": "Amount_USD",
-    "amount": "Amount_USD",
-    "binding_status": "Binding_Status",
-    "significance": "Significance_1to5",
-    "significance_1to5": "Significance_1to5",
-    "change%": "Change_Pct",
-    "change_pct": "Change_Pct",
-    "vol_vs_avg": "Vol_vs_Avg",
-    "expected_date": "Date",
-    "type": "Type",
-    "call_or_put": "Call_or_Put",
-}
+SECTION_NAMES = [marker.replace("## ", "") for marker in SECTION_MARKERS]
 
 
-def split_research_and_appendix(raw_text: str) -> Tuple[str, str]:
-    match = re.search(r"STRUCTURED APPENDIX[:\s]*", raw_text, flags=re.IGNORECASE)
-    if not match:
-        return raw_text.strip(), ""
-    return raw_text[: match.start()].strip(), raw_text[match.start() :].strip()
+def normalize_binding_status(value: str) -> str:
+    cleaned = str(value or "").strip().upper().replace(" ", "_")
+    return AGENT_ONE_BINDING_MAP.get(cleaned, cleaned)
 
 
-def parse_extraction(raw_text: str) -> Dict[str, List[Dict[str, str]]]:
-    _, appendix = split_research_and_appendix(raw_text)
-    canonical = {key: [] for key in APPENDIX_ALIASES}
-    if not appendix:
-        return canonical
-    sections = _extract_sections(appendix)
-    for section_name, section_body in sections.items():
-        canonical[section_name] = parse_markdown_table_block(section_body)
-    return canonical
+def split_research_and_appendix(raw_text: str) -> tuple[str, str]:
+    return raw_text.strip(), raw_text.strip()
 
 
-def _extract_sections(text: str) -> Dict[str, str]:
-    lines = text.splitlines()
-    sections: Dict[str, List[str]] = {}
-    current = None
-    for line in lines:
-        normalized = line.strip().strip(":")
-        matched = None
-        for key, aliases in APPENDIX_ALIASES.items():
-            if normalized in aliases:
-                matched = key
-                break
-        if matched:
-            current = matched
-            sections.setdefault(current, [])
-            continue
-        if current:
-            sections[current].append(line)
-    return {key: "\n".join(value).strip() for key, value in sections.items()}
+def parse_extraction(raw_text: str) -> Dict[str, Any]:
+    reports = parse_minerva_document(raw_text)
+    return {"reports": reports}
+
+
+def split_report_blocks(raw_text: str) -> List[str]:
+    matches = list(re.finditer(r"^## MINERVA_REPORT\s*$", raw_text, flags=re.MULTILINE))
+    if not matches:
+        return []
+    blocks: List[str] = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(raw_text)
+        block = raw_text[start:end].strip()
+        if block:
+            blocks.append(block)
+    return blocks
+
+
+def parse_minerva_document(raw_text: str) -> List[Dict[str, Any]]:
+    reports: List[Dict[str, Any]] = []
+    for block in split_report_blocks(raw_text):
+        sections = extract_sections(block)
+        header = parse_report_header(sections.get("MINERVA_REPORT", ""))
+        reports.append(
+            {
+                "raw_text": block,
+                "header": header,
+                "sections": sections,
+                "decision": parse_key_value_table(sections.get("DECISION", "")),
+                "catalysts": parse_markdown_table_block(sections.get("CATALYSTS", "")),
+                "price_data": parse_key_value_table(sections.get("PRICE_DATA", "")),
+                "events": parse_markdown_table_block(sections.get("EVENTS", "")),
+                "options": parse_markdown_table_block(sections.get("OPTIONS", "")),
+                "tripwires": parse_markdown_table_block(sections.get("TRIPWIRES", "")),
+            }
+        )
+    return reports
+
+
+def extract_sections(text: str) -> Dict[str, str]:
+    positions = []
+    for marker in SECTION_MARKERS:
+        for match in re.finditer(rf"^{re.escape(marker)}\s*$", text, flags=re.MULTILINE):
+            positions.append((match.start(), marker.replace("## ", "")))
+    positions.sort(key=lambda item: item[0])
+    sections: Dict[str, str] = {}
+    for index, (start, name) in enumerate(positions):
+        header_end = text.find("\n", start)
+        if header_end == -1:
+            header_end = len(text)
+        content_start = header_end + 1
+        content_end = positions[index + 1][0] if index + 1 < len(positions) else len(text)
+        sections[name] = text[content_start:content_end].strip()
+    return sections
+
+
+def parse_report_header(section: str) -> Dict[str, Optional[str]]:
+    return {
+        "ticker": _header_value(section, "Ticker"),
+        "date": _header_value(section, "Date"),
+        "source": _header_value(section, "Source"),
+    }
+
+
+def _header_value(section: str, field: str) -> Optional[str]:
+    match = re.search(rf"^###\s+{re.escape(field)}:\s*(.+?)\s*$", section, flags=re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def parse_key_value_table(block: str) -> Dict[str, str]:
+    rows = parse_markdown_table_block(block)
+    if not rows:
+        return {}
+    first = rows[0]
+    if "Field" in first and "Value" in first:
+        return {row.get("Field", "").strip(): row.get("Value", "").strip() for row in rows if row.get("Field")}
+    if "Metric" in first and "Value" in first:
+        return {row.get("Metric", "").strip(): row.get("Value", "").strip() for row in rows if row.get("Metric")}
+    return {}
 
 
 def parse_markdown_table_block(block: str) -> List[Dict[str, str]]:
     rows = [line.strip() for line in block.splitlines() if line.strip().startswith("|")]
     if len(rows) < 2:
         return []
-    header = [_normalize_field_name(cell) for cell in _split_table_row(rows[0])]
+    header = _split_table_row(rows[0])
     parsed_rows: List[Dict[str, str]] = []
     for row in rows[2:]:
         values = _split_table_row(row)
         if len(values) != len(header):
             continue
-        parsed_rows.append({header[index]: values[index] for index in range(len(header))})
+        parsed_rows.append({header[index].strip(): values[index].strip() for index in range(len(header))})
     return parsed_rows
 
 
 def _split_table_row(row: str) -> List[str]:
-    return [cell.strip() for cell in row.strip("|").split("|")]
-
-
-def _normalize_field_name(name: str) -> str:
-    raw = name.strip()
-    lowered = raw.lower().replace(" ", "_")
-    return FIELD_ALIASES.get(lowered, raw)
-
-
-def normalize_binding_status(value: str) -> str:
-    cleaned = value.strip().upper().replace(" ", "_")
-    return AGENT_ONE_BINDING_MAP.get(cleaned, cleaned)
-
+    return [cell.strip() for cell in row.strip().strip("|").split("|")]

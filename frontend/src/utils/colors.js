@@ -1,55 +1,52 @@
-export const colors = {
-  bg0: '#06080d',
-  bg1: '#0b1018',
-  bg2: '#111827',
-  surface: '#141c29',
-  surfaceElevated: '#182233',
-  border: '#263246',
-  borderStrong: '#344155',
-  text: '#ecf2ff',
-  textMuted: '#9ba9bf',
-  textSubtle: '#74839b',
-  primary: '#7dd3fc',
-  primaryStrong: '#38bdf8',
-  primarySoft: 'rgba(125, 211, 252, 0.16)',
-  success: '#4ade80',
-  successSoft: 'rgba(74, 222, 128, 0.16)',
-  warning: '#fbbf24',
-  warningSoft: 'rgba(251, 191, 36, 0.16)',
-  danger: '#fb7185',
-  dangerSoft: 'rgba(251, 113, 133, 0.16)',
-  neutralSoft: 'rgba(236, 242, 255, 0.08)',
-  overlay: 'rgba(6, 8, 13, 0.72)',
-  accentA: '#34d399',
-  accentB: '#818cf8',
-  accentC: '#f97316',
-  accentD: '#22d3ee',
-  pageGradientStart: 'rgba(56, 189, 248, 0.12)',
-  pageGradientEnd: 'rgba(34, 211, 238, 0.08)',
-  sidebarBg: 'rgba(9, 13, 21, 0.92)',
-  brandBgStart: 'rgba(125, 211, 252, 0.12)',
-  brandBgEnd: 'rgba(129, 140, 248, 0.08)',
-  brandBorder: 'rgba(125, 211, 252, 0.16)',
-  brandGlow: 'rgba(125, 211, 252, 0.7)',
-  navHoverBg: 'rgba(236, 242, 255, 0.05)',
-  navHoverBorder: 'rgba(236, 242, 255, 0.08)',
-  sidebarFooterBg: 'rgba(255, 255, 255, 0.02)',
-  topbarBg: 'rgba(6, 8, 13, 0.72)',
-  surfaceSoft: 'rgba(255, 255, 255, 0.03)',
-  surfaceLighter: 'rgba(255, 255, 255, 0.04)',
-  panelBorderSoft: 'rgba(125, 211, 252, 0.12)',
-  heroGradientStart: 'rgba(20, 28, 41, 0.88)',
-  heroGradientEnd: 'rgba(11, 16, 24, 0.82)',
-  shadowPanel: '0 14px 40px rgba(0, 0, 0, 0.28)',
-  shadowCard: '0 12px 28px rgba(0, 0, 0, 0.2)',
-  neutralBorderSoft: 'rgba(236, 242, 255, 0.08)',
-  dividerSoft: 'rgba(236, 242, 255, 0.07)',
-  shimmer: 'rgba(255, 255, 255, 0.06)',
-  buttonText: '#04101a',
-  sparklineArea: 'rgba(56, 189, 248, 0.12)'
+export const palette = {
+  bg: '#041018',
+  bgElevated: '#081521',
+  panel: 'rgba(10, 21, 33, 0.84)',
+  panelSoft: 'rgba(15, 27, 41, 0.76)',
+  line: 'rgba(148, 163, 184, 0.18)',
+  lineStrong: 'rgba(125, 211, 252, 0.2)',
+  text: '#e2e8f0',
+  muted: '#94a3b8',
+  accent: '#7dd3fc',
+  accentSoft: 'rgba(125, 211, 252, 0.12)',
+  success: '#86efac',
+  warning: '#fde68a',
+  danger: '#fda4af',
 };
 
-export const cssVariables = Object.entries(colors).reduce((acc, [key, value]) => {
-  acc[`--color-${key}`] = value;
-  return acc;
-}, {});
+export const appShellStyle = {
+  backgroundColor: palette.bg,
+  backgroundImage: [
+    'radial-gradient(circle at top left, rgba(34, 211, 238, 0.12), transparent 34%)',
+    'radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), transparent 28%)',
+    'linear-gradient(180deg, rgba(4, 16, 24, 1), rgba(3, 9, 16, 1))',
+  ].join(', '),
+  color: palette.text,
+};
+
+export const panelStyle = {
+  background: `linear-gradient(180deg, ${palette.panel}, ${palette.panelSoft})`,
+  borderColor: palette.line,
+};
+
+export const toneClasses = {
+  neutral: 'border-white/10 bg-white/5 text-slate-100',
+  positive: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100',
+  warning: 'border-amber-300/20 bg-amber-300/10 text-amber-100',
+  danger: 'border-rose-300/20 bg-rose-300/10 text-rose-100',
+  info: 'border-sky-300/20 bg-sky-300/10 text-sky-100',
+};
+
+export const toneByVerdict = {
+  BULLISH: 'positive',
+  BEARISH: 'danger',
+  NEUTRAL: 'warning',
+};
+
+export const toneByAction = {
+  BUY: 'positive',
+  SELL: 'danger',
+  HOLD: 'neutral',
+  WATCH: 'warning',
+  AVOID: 'danger',
+};

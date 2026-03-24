@@ -21,17 +21,11 @@ def reset_database(tmp_path):
     db_path = tmp_path / "test_minerva.db"
     original_paths = {
         "database_path": settings.database_path,
-        "tasks_dir": settings.tasks_dir,
-        "outputs_dir": settings.outputs_dir,
-        "reviews_dir": settings.reviews_dir,
         "extractions_dir": settings.extractions_dir,
         "exports_dir": settings.exports_dir,
     }
     os.environ["MINERVA_DB_PATH"] = str(db_path)
     object.__setattr__(settings, "database_path", db_path)
-    object.__setattr__(settings, "tasks_dir", tmp_path / "tasks")
-    object.__setattr__(settings, "outputs_dir", tmp_path / "agent_outputs")
-    object.__setattr__(settings, "reviews_dir", tmp_path / "reviews")
     object.__setattr__(settings, "extractions_dir", tmp_path / "extractions")
     object.__setattr__(settings, "exports_dir", tmp_path / "exports")
     asyncio.run(init_db(db_path))

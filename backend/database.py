@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Iterable, List, Mapping, Optional, Sequence
 
@@ -138,6 +139,7 @@ SCHEMA_STATEMENTS = [
         atr14 REAL,
         notes TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(ticker, date),
         FOREIGN KEY(extraction_id) REFERENCES extractions(id)
     )
     """,
@@ -283,9 +285,14 @@ SCHEMA_STATEMENTS = [
         FOREIGN KEY(run_id) REFERENCES analysis_runs(run_id)
     )
     """,
+]
+
+INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_catalysts_ticker_date ON catalysts(ticker, date)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_unique_ticker_date ON price_snapshots(ticker, date)",
     "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON price_snapshots(ticker, date)",
     "CREATE INDEX IF NOT EXISTS idx_events_ticker_date ON upcoming_events(ticker, date)",
+    "CREATE INDEX IF NOT EXISTS idx_research_ticker_created ON research_notes(ticker, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_outputs_run_agent ON agent_outputs(run_id, agent_number)",
     "CREATE INDEX IF NOT EXISTS idx_runs_ticker_status ON analysis_runs(ticker, status)",
     "CREATE INDEX IF NOT EXISTS idx_journal_ticker_status ON trading_journal(ticker, status)",
@@ -349,6 +356,16 @@ ADDITIONAL_COLUMNS = {
     ],
 }
 
+BOOL_LIST_DEFAULTS = {"secondary_minerals", "affected_tickers", "pattern_tags", "related_catalysts", "related_stocks", "tags"}
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def utc_now_iso() -> str:
+    return utc_now()
+
 
 async def connect(db_path: Optional[Path] = None) -> aiosqlite.Connection:
     path = db_path or Path(os.getenv("MINERVA_DB_PATH", str(settings.database_path)))
@@ -365,6 +382,9 @@ async def init_db(db_path: Optional[Path] = None) -> None:
         for statement in SCHEMA_STATEMENTS:
             await conn.execute(statement)
         await _apply_column_migrations(conn)
+        await _dedupe_price_snapshots(conn)
+        for statement in INDEX_STATEMENTS:
+            await conn.execute(statement)
         await conn.commit()
     finally:
         await conn.close()
@@ -380,6 +400,19 @@ async def _apply_column_migrations(conn: aiosqlite.Connection) -> None:
             if column_name in existing:
                 continue
             await conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}")
+
+
+async def _dedupe_price_snapshots(conn: aiosqlite.Connection) -> None:
+    await conn.execute(
+        """
+        DELETE FROM price_snapshots
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM price_snapshots
+            GROUP BY ticker, date
+        )
+        """
+    )
 
 
 async def fetch_all(conn: aiosqlite.Connection, query: str, params: Iterable[Any] = ()) -> List[Mapping[str, Any]]:
@@ -424,14 +457,19 @@ def decode_json_field(value: Any, default: Any) -> Any:
         return default
 
 
-def decode_row(row: Optional[Mapping[str, Any]], json_fields: Sequence[str] = ()) -> Optional[Mapping[str, Any]]:
+def decode_row(
+    row: Optional[Mapping[str, Any]],
+    json_fields: Sequence[str] = (),
+    bool_fields: Sequence[str] = (),
+) -> Optional[Mapping[str, Any]]:
     if not row:
         return row
     decoded = dict(row)
-    list_defaults = {"secondary_minerals", "affected_tickers", "pattern_tags", "related_catalysts", "related_stocks", "tags"}
     for field in json_fields:
-        default = [] if field in list_defaults else {}
+        default = [] if field in BOOL_LIST_DEFAULTS else {}
         decoded[field] = decode_json_field(decoded.get(field), default)
+    for field in bool_fields:
+        decoded[field] = bool(decoded.get(field))
     return decoded
 
 

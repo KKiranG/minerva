@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 CATALYST_CATEGORIES = [
@@ -53,6 +53,23 @@ AGENT_ONE_BINDING_MAP = {
     "CONDITIONAL": "CONDITIONAL",
 }
 
+VERDICTS = {"BULLISH", "BEARISH", "NEUTRAL"}
+ACTIONS = {"BUY", "SELL", "HOLD", "WATCH", "AVOID"}
+REVENUE_STATUSES = {"GENERATING", "PRE_REVENUE", "EARLY_REVENUE", "DECLINING"}
+DILUTION_RISKS = {"HIGH", "MEDIUM", "LOW", "MINIMAL"}
+EVENT_DATE_PRECISIONS = {"EXACT", "WEEK", "MONTH", "QUARTER", "UNKNOWN"}
+EVENT_STATUSES = {"UPCOMING", "COMPLETE", "CANCELLED"}
+EXIT_REASONS = {"TARGET_HIT", "STOP_HIT", "THESIS_INVALIDATED", "TIME_EXPIRED", "PARTIAL_TAKE", "UPGRADED", "DOWNGRADED", "FORCED"}
+
+
+def _validate_choice(value: Optional[str], allowed: set[str], field_name: str) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    normalized = str(value).upper()
+    if normalized not in allowed:
+        raise ValueError(f"{field_name} must be one of: {', '.join(sorted(allowed))}")
+    return normalized
+
 
 class APIMessage(BaseModel):
     message: str
@@ -101,6 +118,26 @@ class StockBase(BaseModel):
     needs_attention: bool = False
     alert_flag: bool = False
 
+    @field_validator("current_verdict")
+    @classmethod
+    def validate_verdict(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, VERDICTS, "current_verdict")
+
+    @field_validator("current_action")
+    @classmethod
+    def validate_action(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, ACTIONS, "current_action")
+
+    @field_validator("revenue_status")
+    @classmethod
+    def validate_revenue_status(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, REVENUE_STATUSES, "revenue_status")
+
+    @field_validator("dilution_risk")
+    @classmethod
+    def validate_dilution_risk(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, DILUTION_RISKS, "dilution_risk")
+
 
 class StockCreate(StockBase):
     pass
@@ -143,6 +180,26 @@ class StockPatch(BaseModel):
     needs_attention: Optional[bool] = None
     alert_flag: Optional[bool] = None
 
+    @field_validator("current_verdict")
+    @classmethod
+    def validate_verdict(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, VERDICTS, "current_verdict")
+
+    @field_validator("current_action")
+    @classmethod
+    def validate_action(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, ACTIONS, "current_action")
+
+    @field_validator("revenue_status")
+    @classmethod
+    def validate_revenue_status(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, REVENUE_STATUSES, "revenue_status")
+
+    @field_validator("dilution_risk")
+    @classmethod
+    def validate_dilution_risk(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, DILUTION_RISKS, "dilution_risk")
+
 
 class StockResponse(StockBase):
     created_at: Optional[str] = None
@@ -173,6 +230,17 @@ class CatalystBase(BaseModel):
     extraction_id: Optional[int] = None
     analysis_run_id: Optional[str] = None
 
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        return _validate_choice(value, set(CATALYST_CATEGORIES), "category") or "OTHER"
+
+    @field_validator("binding_status")
+    @classmethod
+    def validate_binding_status(cls, value: str) -> str:
+        normalized = _validate_choice(value, set(CANONICAL_BINDING_STATUSES) | {"FINAL", "LOI"}, "binding_status")
+        return AGENT_ONE_BINDING_MAP.get(normalized or "", normalized)
+
 
 class CatalystCreate(CatalystBase):
     pass
@@ -196,6 +264,14 @@ class CatalystPatch(BaseModel):
     source: Optional[str] = None
     notes: Optional[str] = None
 
+    @field_validator("binding_status")
+    @classmethod
+    def validate_binding_status(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        normalized = _validate_choice(value, set(CANONICAL_BINDING_STATUSES) | {"FINAL", "LOI"}, "binding_status")
+        return AGENT_ONE_BINDING_MAP.get(normalized or "", normalized)
+
 
 class CatalystResponse(CatalystBase):
     id: int
@@ -218,6 +294,16 @@ class EventCreate(BaseModel):
     outcome_date: Optional[str] = None
     status: str = "UPCOMING"
     extraction_id: Optional[int] = None
+
+    @field_validator("date_precision")
+    @classmethod
+    def validate_precision(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, EVENT_DATE_PRECISIONS, "date_precision")
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        return _validate_choice(value, EVENT_STATUSES, "status") or "UPCOMING"
 
 
 class EventResponse(EventCreate):
@@ -273,6 +359,11 @@ class TradingJournalCreate(BaseModel):
     pattern_tags: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
 
+    @field_validator("exit_reason")
+    @classmethod
+    def validate_exit_reason(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_choice(value, EXIT_REASONS, "exit_reason")
+
 
 class TradingJournalResponse(TradingJournalCreate):
     id: int
@@ -280,10 +371,10 @@ class TradingJournalResponse(TradingJournalCreate):
 
 
 class ExtractionIngestRequest(BaseModel):
-    date: str
-    scope: str
-    mode: str
-    source_model: str
+    date: Optional[str] = None
+    scope: Optional[str] = None
+    mode: str = "DELTA"
+    source_model: str = "manual-frontier"
     raw_text: str
     time_window_start: Optional[str] = None
     time_window_end: Optional[str] = None
@@ -293,8 +384,8 @@ class ExtractionIngestRequest(BaseModel):
 class ExtractionIngestResponse(BaseModel):
     extraction_id: int
     parse_status: str
-    canonical_appendix: Dict[str, Any]
-    counters: Dict[str, int]
+    scope: str
+    reports: List[Dict[str, Any]]
 
 
 class AnalysisRunCreate(BaseModel):
@@ -317,29 +408,34 @@ class AnalysisRunResponse(BaseModel):
     frontier_review_status: Optional[str] = None
 
 
-class AnalysisTrailEntry(BaseModel):
-    id: str
-    run_id: Optional[str] = None
-    ticker: str
-    agent_number: Optional[int] = None
-    agent_name: str
-    agent_kind: str
-    parse_status: Optional[str] = None
-    verdict: Optional[str] = None
-    action: Optional[str] = None
-    conviction: Optional[int] = None
-    headline: str
-    summary: Optional[str] = None
-    raw_markdown: str
-    created_at: Optional[str] = None
+class AnalysisRunIngestRequest(BaseModel):
+    raw_text: str
 
 
-class FrontierIngestRequest(BaseModel):
+class MinervaIngestRequest(BaseModel):
+    raw_text: str
+    mode: str = "DELTA"
+    source_model: str = "manual-frontier"
+    custom_focus: Optional[str] = None
+
+
+class MinervaRunResult(BaseModel):
     run_id: str
     ticker: str
-    source_model: str
-    raw_text: str
-    merge_with_existing: bool = False
+    parse_status: str
+    catalysts_stored: int = 0
+    events_stored: int = 0
+    price_snapshot_stored: bool = False
+    decision_stored: bool = False
+    notes_stored: int = 0
+    failed_sections: List[str] = Field(default_factory=list)
+
+
+class MinervaIngestResponse(BaseModel):
+    extraction_id: int
+    parse_status: str
+    scope: List[str]
+    reports: List[MinervaRunResult]
 
 
 class PriceSnapshotBase(BaseModel):
@@ -441,15 +537,3 @@ class DashboardStockCard(BaseModel):
 class DashboardOverviewResponse(BaseModel):
     generated_at: str
     stocks: List[DashboardStockCard]
-
-
-class AgentOutputResult(BaseModel):
-    header: str
-    sections: Dict[str, Any]
-    parse_status: str
-
-
-class ParserFixture(BaseModel):
-    name: str
-    raw_text: str
-    parsed: Dict[str, Any]

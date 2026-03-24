@@ -1,72 +1,58 @@
-import React, { useState } from 'react';
-import { seedUniverse } from '../api';
+import React, { useMemo, useState } from 'react';
+import { DataTable, EmptyState, MetricCard, PageSection, Select } from '../components/Common';
 import useAsyncResource from '../hooks/useAsyncResource';
-import { Badge, DataTable, EmptyState, ErrorState, LoadingState, Section, TimelineList, actionTone } from '../components/Common';
-import { asCurrency, asDate, asPercent } from '../utils/formatters';
+import { asCurrency, asPercent } from '../utils/formatters';
 
 export default function TradingJournal({ api, stocks = [] }) {
-  const [ticker, setTicker] = useState('MP');
-  const journal = useAsyncResource((signal) => api.getJournal({ ticker, signal }), [ticker]);
-  const universe = stocks.length ? stocks : seedUniverse;
+  const [ticker, setTicker] = useState('ALL');
+  const resource = useAsyncResource(
+    (signal) => api.getJournal({ ticker: ticker === 'ALL' ? undefined : ticker, limit: 200, signal }),
+    [ticker]
+  );
+
+  const latest = useMemo(() => (resource.data || [])[0] || null, [resource.data]);
 
   return (
-    <Section
+    <PageSection
       title="Trading journal"
-      subtitle="Review realised and open trades with entry, stop, target, and PnL context."
+      subtitle="Explicit empty states replace the old silent summary placeholders when no journal data exists."
       action={
-        <select className="toolbar-select" value={ticker} onChange={(event) => setTicker(event.target.value)}>
-          {universe.map((stock) => (
-            <option key={stock.ticker} value={stock.ticker}>
-              {stock.ticker}
-            </option>
-          ))}
-        </select>
+        <Select value={ticker} onChange={(event) => setTicker(event.target.value)}>
+          <option value="ALL">All tickers</option>
+          {stocks.map((stock) => <option key={stock.ticker} value={stock.ticker}>{stock.ticker}</option>)}
+        </Select>
       }
     >
-      {journal.status === 'loading' || journal.status === 'idle' ? (
-        <LoadingState rows={4} />
-      ) : journal.status === 'error' ? (
-        <ErrorState description={journal.error} />
-      ) : journal.data?.length ? (
-        <div className="stack">
-          <div className="panel-grid">
-            <article className="metric-card">
-              <div className="muted">Entries</div>
-              <div className="metric-value">{journal.data.length}</div>
-            </article>
-            <article className="metric-card">
-              <div className="muted">Latest PnL</div>
-              <div className="metric-value">{asPercent(journal.data[0]?.pnl_percent)}</div>
-            </article>
+      {resource.status === 'loading' || resource.status === 'idle' ? (
+        <div className="space-y-3">
+          <div className="h-4 animate-pulse rounded-full bg-white/10" />
+          <div className="h-4 animate-pulse rounded-full bg-white/10" />
+        </div>
+      ) : resource.status === 'error' ? (
+        <EmptyState title="Journal unavailable" description={resource.error} />
+      ) : resource.data?.length ? (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <MetricCard label="Entries" value={resource.data.length} />
+            <MetricCard label="Latest PnL" value={latest ? asPercent(latest.pnl_percent) : 'No entry yet'} />
+            <MetricCard label="Latest outcome" value={latest?.outcome || 'No outcome yet'} />
           </div>
           <DataTable
-            rows={journal.data}
-            rowKey={(row) => row.id}
+            rows={resource.data}
             columns={[
+              { key: 'ticker', label: 'Ticker' },
               { key: 'status', label: 'Status' },
-              { key: 'direction', label: 'Direction', render: (row) => <Badge tone={actionTone(row.direction === 'LONG' ? 'BUY' : 'SELL')}>{row.direction}</Badge> },
-              { key: 'entry_date', label: 'Entry date', render: (row) => asDate(row.entry_date) },
+              { key: 'direction', label: 'Direction' },
               { key: 'entry_price', label: 'Entry', render: (row) => asCurrency(row.entry_price) },
-              { key: 'stop_loss', label: 'Stop', render: (row) => asCurrency(row.stop_loss) },
               { key: 'target_price', label: 'Target', render: (row) => asCurrency(row.target_price) },
+              { key: 'stop_loss', label: 'Stop', render: (row) => asCurrency(row.stop_loss) },
               { key: 'pnl_percent', label: 'PnL %', render: (row) => asPercent(row.pnl_percent) },
-              { key: 'thesis', label: 'Thesis', render: (row) => row.thesis || '—' }
             ]}
-          />
-          <TimelineList
-            items={journal.data.map((row) => ({
-              id: row.id,
-              title: row.outcome || `${row.ticker} trade`,
-              badge: row.status,
-              meta: [<span key="ticker">{row.ticker}</span>, <span key="pnl">{asPercent(row.pnl_percent)}</span>],
-              body: row.notes || 'No notes provided.',
-              footer: `Capital committed: ${asCurrency(row.capital_committed)} | PnL: ${asCurrency(row.pnl_amount)}`
-            }))}
           />
         </div>
       ) : (
-        <EmptyState title="No journal rows" description={`No journal entries returned for ${ticker}.`} />
+        <EmptyState title="No journal entries" description="There are no trading-journal rows for this filter yet." />
       )}
-    </Section>
+    </PageSection>
   );
 }

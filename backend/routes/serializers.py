@@ -14,7 +14,12 @@ def serialize_stock(row: Optional[Mapping[str, Any]]):
             "government_funding_pending",
             "government_contracts",
         ),
+        bool_fields=("open_position_flag", "needs_attention", "alert_flag"),
     )
+
+
+def serialize_catalyst(row: Optional[Mapping[str, Any]]):
+    return decode_row(row, json_fields=("affected_tickers",))
 
 
 def serialize_event(row: Optional[Mapping[str, Any]]):
@@ -30,4 +35,7 @@ def serialize_journal_entry(row: Optional[Mapping[str, Any]]):
 
 
 def serialize_price_snapshot(row: Optional[Mapping[str, Any]]):
-    return decode_row(row)
+    return decode_row(
+        row,
+        bool_fields=("gap_up", "gap_down", "new_high_52w", "new_low_52w"),
+    )

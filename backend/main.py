@@ -11,11 +11,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from backend.config import settings
     from backend.database import init_db
-    from backend.routes import analysis, catalysts, dashboard, events, extractions, frontier, journal, prices, prompts, research, stocks
+    from backend.routes import analysis, catalysts, dashboard, events, extractions, journal, prices, prompts, research, search, stocks
 else:
     from .config import settings
     from .database import init_db
-    from .routes import analysis, catalysts, dashboard, events, extractions, frontier, journal, prices, prompts, research, stocks
+    from .routes import analysis, catalysts, dashboard, events, extractions, journal, prices, prompts, research, search, stocks
 
 
 @asynccontextmanager
@@ -41,8 +41,8 @@ app.include_router(research.router)
 app.include_router(journal.router)
 app.include_router(extractions.router)
 app.include_router(analysis.router)
-app.include_router(frontier.router)
 app.include_router(prompts.router)
+app.include_router(search.router)
 app.include_router(dashboard.router)
 
 

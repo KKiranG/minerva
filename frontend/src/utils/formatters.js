@@ -1,53 +1,37 @@
-const safeDate = (value) => {
+import { toneByAction, toneByVerdict } from './colors';
+
+export const parseDate = (value) => {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-export const asCurrency = (value, options = {}) => {
+export const asCurrency = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    maximumFractionDigits: options.maximumFractionDigits ?? 2
-  }).format(value);
+    maximumFractionDigits: 2,
+  }).format(Number(value));
 };
 
-export const asNumber = (value, options = {}) => {
+export const asPercent = (value, { signed = true } = {}) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return new Intl.NumberFormat('en-US', options).format(value);
+  const number = Number(value);
+  const absolute = `${Math.abs(number).toFixed(1)}%`;
+  if (!signed) return absolute;
+  if (number === 0) return '0.0%';
+  return `${number > 0 ? '+' : '-'}${absolute}`;
 };
 
-export const asCompactNumber = (value) => {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1
-  }).format(value);
-};
-
-export const asPercent = (value, options = {}) => {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  const digits = options.maximumFractionDigits ?? 1;
-  const absolute = `${Math.abs(Number(value)).toFixed(digits)}%`;
-  if (options.signed === false) return absolute;
-  if (Number(value) === 0) return '0.0%';
-  return `${value > 0 ? '+' : '-'}${absolute}`;
-};
-
-export const asDate = (value, options = {}) => {
-  const date = safeDate(value);
+export const asDate = (value) => {
+  const date = parseDate(value);
   if (!date) return '—';
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    ...options
-  }).format(date);
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 };
 
-export const asDateTime = (value, options = {}) => {
-  const date = safeDate(value);
+export const asDateTime = (value) => {
+  const date = parseDate(value);
   if (!date) return '—';
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
@@ -55,12 +39,11 @@ export const asDateTime = (value, options = {}) => {
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    ...options
   }).format(date);
 };
 
 export const asRelativeDate = (value) => {
-  const date = safeDate(value);
+  const date = parseDate(value);
   if (!date) return '—';
   const diffMinutes = Math.round((date.getTime() - Date.now()) / 60000);
   const abs = Math.abs(diffMinutes);
@@ -71,50 +54,42 @@ export const asRelativeDate = (value) => {
   return `${days}d ${diffMinutes >= 0 ? 'ahead' : 'ago'}`;
 };
 
-export const verdictTone = (verdict) => {
-  switch (String(verdict || '').toUpperCase()) {
-    case 'BULLISH':
-      return 'positive';
-    case 'BEARISH':
-      return 'danger';
-    default:
-      return 'warning';
-  }
+export const countdownLabel = (value, noun = 'event') => {
+  const date = parseDate(value);
+  if (!date) return 'Date unknown.';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  const diff = Math.round((date.getTime() - today.getTime()) / 86400000);
+  const cleanNoun = String(noun || 'event').toLowerCase();
+  if (diff === 0) return `${cleanNoun} is today.`;
+  if (diff > 0) return `${diff} day${diff === 1 ? '' : 's'} until ${cleanNoun}.`;
+  const elapsed = Math.abs(diff);
+  return `${elapsed} day${elapsed === 1 ? '' : 's'} since ${cleanNoun}.`;
 };
 
-export const actionTone = (action) => {
-  switch (String(action || '').toUpperCase()) {
-    case 'BUY':
-      return 'positive';
-    case 'SELL':
-      return 'danger';
-    case 'AVOID':
-      return 'danger';
-    case 'WATCH':
-      return 'warning';
-    default:
-      return 'neutral';
-  }
+export const asCompactNumber = (value) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value));
 };
 
 export const convictionLabel = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return `${value}/5`;
+  return `${Number(value)}/5`;
 };
-
-export const yesNo = (value) => (value ? 'Yes' : 'No');
 
 export const entryRangeLabel = (low, high) => {
   if (low === null || low === undefined || high === null || high === undefined) return '—';
   return `${asCurrency(low)} - ${asCurrency(high)}`;
 };
 
-export const compactText = (value, fallback = '—') => {
-  if (!value && value !== 0) return fallback;
-  return String(value);
+export const firstReadableLine = (value, fallback = 'No summary stored.') => {
+  if (!value) return fallback;
+  const line = String(value).split('\n').find((item) => item.trim());
+  return line ? line.trim() : fallback;
 };
 
-export const formatTickerLabel = (ticker, companyName) => {
-  if (!ticker) return '—';
-  return companyName ? `${ticker} | ${companyName}` : ticker;
-};
+export const formatTickerLabel = (ticker, companyName) => (companyName ? `${ticker} | ${companyName}` : ticker || '—');
+
+export const verdictTone = (value) => toneByVerdict[String(value || '').toUpperCase()] || 'neutral';
+export const actionTone = (value) => toneByAction[String(value || '').toUpperCase()] || 'neutral';

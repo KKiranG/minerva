@@ -1,17 +1,16 @@
-import React, { useMemo } from 'react';
-import useAsyncResource from '../hooks/useAsyncResource';
+import React, { useEffect, useMemo } from 'react';
 import {
   Badge,
+  Button,
   DataTable,
   DecisionCard,
   EmptyState,
-  ErrorState,
   ExpandableCard,
   FieldList,
-  GovernmentFundingTable,
   LoadingState,
-  Section,
-  Sparkline,
+  PageSection,
+  PreBlock,
+  TimelineList,
   asCurrency,
   asDate,
   asDateTime,
@@ -19,60 +18,22 @@ import {
   convictionLabel,
   formatTickerLabel,
   verdictTone,
-  actionTone
 } from '../components/Common';
-import { asCompactNumber, asRelativeDate } from '../utils/formatters';
+import useAsyncResource from '../hooks/useAsyncResource';
+import { actionTone, asRelativeDate, countdownLabel, firstReadableLine, parseDate } from '../utils/formatters';
 
-const firstReadableLine = (value, fallback = 'No summary available.') => {
-  if (!value) return fallback;
-  const line = String(value)
-    .split('\n')
-    .map((item) => item.trim())
-    .find((item) => item && !item.startsWith('#') && !item.startsWith('|'));
-  return line || fallback;
-};
+function SectionState({ state, emptyTitle, emptyDescription, children, rows = 4 }) {
+  if (state.status === 'loading' || state.status === 'idle') return <LoadingState rows={rows} />;
+  if (state.status === 'error') return <EmptyState title="Section unavailable" description={state.error} />;
+  if (!state.data || (Array.isArray(state.data) && !state.data.length)) {
+    return <EmptyState title={emptyTitle} description={emptyDescription} />;
+  }
+  return children(state.data);
+}
 
-const significanceTone = (value) => {
-  if (Number(value) >= 5) return 'danger';
-  if (Number(value) >= 4) return 'warning';
-  return 'neutral';
-};
-
-const governmentFundingFromCatalysts = (rows = []) =>
-  rows
-    .filter((row) => String(row.category || '').startsWith('GOV_'))
-    .map((row) => ({
-      id: row.id,
-      agency: row.source || 'Government',
-      program: row.title,
-      announced_date: row.date,
-      amount_ceiling: row.amount_ceiling,
-      amount_obligated: row.amount_obligated,
-      amount_disbursed: row.amount_disbursed,
-      status: row.binding_status,
-      next_milestone: row.next_decision_point,
-      notes: row.notes
-    }));
-
-const normalizeTrail = (rows = []) =>
-  rows.map((item, index) => ({
-    id: item.id || `${item.run_id || 'trail'}-${index}`,
-    agent_name: item.agent_name || item.owner || item.title || 'Analysis',
-    agent_kind: item.agent_kind || item.stage || 'analysis',
-    created_at: item.created_at || null,
-    verdict: item.verdict || item.run_verdict || null,
-    action: item.action || item.run_action || null,
-    conviction: item.conviction || item.run_conviction || null,
-    parse_status: item.parse_status || 'COMPLETE',
-    headline: item.headline || item.title || item.agent_name || 'Analysis update',
-    summary: item.summary || firstReadableLine(item.raw_markdown || item.note_body || ''),
-    raw_markdown: item.raw_markdown || item.note_body || '',
-    parsed_json: item.parsed_json || null
-  }));
-
-export default function StockDetail({ api, ticker }) {
+export default function StockDetail({ api, ticker, params }) {
   const stock = useAsyncResource((signal) => api.getStock(ticker, { signal }), [ticker]);
-  const latestPrice = useAsyncResource((signal) => api.getLatestPrice(ticker, { signal }), [ticker]);
+  const price = useAsyncResource((signal) => api.getLatestPrice(ticker, { signal }), [ticker]);
   const history = useAsyncResource((signal) => api.getAnalysisHistory(ticker, { signal }), [ticker]);
   const trail = useAsyncResource((signal) => api.getAnalysisTrail(ticker, { signal }), [ticker]);
   const catalysts = useAsyncResource((signal) => api.getCatalysts({ ticker, signal }), [ticker]);
@@ -80,332 +41,306 @@ export default function StockDetail({ api, ticker }) {
   const research = useAsyncResource((signal) => api.getResearch({ ticker, signal }), [ticker]);
   const journal = useAsyncResource((signal) => api.getJournal({ ticker, signal }), [ticker]);
 
-  if (stock.status === 'loading' || stock.status === 'idle') return <LoadingState rows={6} />;
-  if (stock.status === 'error') return <ErrorState description={stock.error} retry={<button className="button button-primary">Retry</button>} />;
-  if (!stock.data) {
-    return <EmptyState title="Stock not found" description={`We could not load ${ticker}. Try another seeded ticker like MP or UUUU.`} />;
-  }
+  if (stock.status === 'loading' || stock.status === 'idle') return <LoadingState rows={8} />;
+  if (stock.status === 'error') return <EmptyState title="Stock unavailable" description={stock.error} />;
+  if (!stock.data) return <EmptyState title="Stock not found" description={`No stock record exists for ${ticker}.`} />;
 
   const data = stock.data;
-  const currentTicker = data.ticker || ticker;
-  const currentCatalysts = (catalysts.data || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  const currentEvents = (events.data || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-  const currentResearch = research.data || [];
-  const currentJournal = journal.data || [];
-  const currentTrail = normalizeTrail(trail.data || []);
-  const currentHistory = history.data || [];
-  const latestRun = currentHistory[0] || null;
-  const priceSnapshot = latestPrice.data || null;
+  const latestRun = history.data?.[0] || null;
+  const latestPrice = price.data || null;
 
   const decision = {
     verdict: latestRun?.final_verdict || data.current_verdict,
     action: latestRun?.final_action || data.current_action,
     conviction: latestRun?.final_conviction ?? data.current_conviction,
     summary: latestRun?.one_line_summary || data.current_thesis,
-    currentPrice: priceSnapshot?.close ?? data.current_price,
-    entryLow: latestRun?.entry_low ?? data.entry_low,
-    entryHigh: latestRun?.entry_high ?? data.entry_high,
+    currentPrice: latestPrice?.close ?? data.current_price,
+    entryLow: latestRun?.entry_low,
+    entryHigh: latestRun?.entry_high,
     stop: latestRun?.stop_loss ?? data.current_stop,
     target: latestRun?.target_price ?? data.current_target,
-    timeframe: latestRun?.timeframe ?? data.timeframe,
+    timeframe: latestRun?.timeframe,
     alertFlag: data.alert_flag,
-    openPositionFlag: data.open_position_flag
+    openPositionFlag: data.open_position_flag,
   };
 
-  const governmentFundingRows = useMemo(() => {
-    const fromCatalysts = governmentFundingFromCatalysts(currentCatalysts);
-    if (fromCatalysts.length) return fromCatalysts;
-    return Array.isArray(data.government_funding) ? data.government_funding : [];
-  }, [currentCatalysts, data.government_funding]);
+  const sortedCatalysts = useMemo(
+    () => (catalysts.data || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))),
+    [catalysts.data]
+  );
+  const sortedEvents = useMemo(
+    () =>
+      (events.data || [])
+        .slice()
+        .sort((a, b) => {
+          const left = parseDate(a.date)?.getTime() || Number.MAX_SAFE_INTEGER;
+          const right = parseDate(b.date)?.getTime() || Number.MAX_SAFE_INTEGER;
+          return left - right;
+        }),
+    [events.data]
+  );
 
-  const convictionSeries = useMemo(() => {
-    const runs = currentHistory
-      .slice()
-      .reverse()
-      .map((run) => Number(run.final_conviction))
-      .filter((value) => !Number.isNaN(value));
-    if (runs.length) return runs;
-    return currentTrail
-      .slice()
-      .reverse()
-      .map((item) => Number(item.conviction))
-      .filter((value) => !Number.isNaN(value));
-  }, [currentHistory, currentTrail]);
+  useEffect(() => {
+    const panel = params?.get('panel');
+    if (!panel) return;
+    const target = document.getElementById(`stock-panel-${panel}`);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [params, ticker]);
 
   return (
-    <div className="stack">
-      <section className="hero">
-        <div className="row">
-          <div className="stack">
-            <div className="meta">
-              <Badge tone={verdictTone(decision.verdict)}>{decision.verdict || '—'}</Badge>
-              <Badge tone={actionTone(decision.action)}>{decision.action || '—'}</Badge>
+    <div className="space-y-6">
+      <section className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,rgba(7,18,29,0.95),rgba(4,10,18,0.9))] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.3)]">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={verdictTone(decision.verdict)}>{decision.verdict || 'No verdict'}</Badge>
+              <Badge tone={actionTone(decision.action)}>{decision.action || 'No action'}</Badge>
               <Badge tone={data.open_position_flag ? 'positive' : 'neutral'}>{data.open_position_flag ? 'Open position' : 'Flat'}</Badge>
               {data.alert_flag ? <Badge tone="danger">Alert active</Badge> : null}
             </div>
-            <h1 className="page-title">{formatTickerLabel(currentTicker, data.company_name)}</h1>
-            <p className="muted">
-              {data.primary_mineral || 'Unknown mineral'} | {data.value_chain_stage || 'Unknown stage'} | {data.country || 'Unknown geography'}
-            </p>
-            <p className="muted">{data.current_thesis || 'No thesis summary is stored yet.'}</p>
+            <div className="space-y-1">
+              <h1 className="text-3xl font-semibold tracking-tight text-white">{formatTickerLabel(data.ticker, data.company_name)}</h1>
+              <p className="text-sm leading-6 text-slate-300">
+                {data.primary_mineral || 'Unknown mineral'} • {data.value_chain_stage || 'Unknown stage'} • {data.country || 'Unknown geography'}
+              </p>
+              <p className="max-w-3xl text-sm leading-6 text-slate-300">{data.current_thesis || 'No stock thesis is stored yet.'}</p>
+            </div>
           </div>
-
-          <div className="stack" style={{ minWidth: 320 }}>
-            <div className="metric-value">{asCurrency(decision.currentPrice)}</div>
-            <Sparkline values={convictionSeries.length ? convictionSeries : [Number(decision.conviction || 0)]} />
-            <div className="meta">
-              <span>Last analysis {data.last_analysis_date ? asDateTime(data.last_analysis_date) : '—'}</span>
-              <span>Last full {data.last_full_analysis ? asDateTime(data.last_full_analysis) : '—'}</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Current price</div>
+              <div className="mt-2 text-2xl font-semibold text-white">{asCurrency(decision.currentPrice)}</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Last analysis</div>
+              <div className="mt-2 text-base font-semibold text-white">{data.last_analysis_date ? asDateTime(data.last_analysis_date) : 'Never'}</div>
+              <div className="text-sm text-slate-300">{data.last_analysis_date ? asRelativeDate(data.last_analysis_date) : 'Needs first report'}</div>
             </div>
           </div>
         </div>
       </section>
 
-      <DecisionCard
-        verdict={decision.verdict}
-        action={decision.action}
-        conviction={decision.conviction}
-        summary={decision.summary}
-        currentPrice={decision.currentPrice}
-        entryLow={decision.entryLow}
-        entryHigh={decision.entryHigh}
-        stop={decision.stop}
-        target={decision.target}
-        timeframe={decision.timeframe}
-        alertFlag={decision.alertFlag}
-        openPositionFlag={decision.openPositionFlag}
-      />
+      <DecisionCard {...decision} />
 
-      <div className="panel-grid">
-        <Section title="Key levels" subtitle="Latest price snapshot, support/resistance map, and tactical tape context.">
-          {latestPrice.status === 'loading' || latestPrice.status === 'idle' ? (
-            <LoadingState rows={4} />
-          ) : priceSnapshot ? (
-            <FieldList
-              fields={[
-                { label: 'Current price', value: asCurrency(priceSnapshot.close ?? data.current_price) },
-                { label: 'Support 1 / 2', value: `${asCurrency(priceSnapshot.support1)} / ${asCurrency(priceSnapshot.support2)}` },
-                { label: 'Resistance 1 / 2', value: `${asCurrency(priceSnapshot.resistance1)} / ${asCurrency(priceSnapshot.resistance2)}` },
-                { label: 'Open / high / low', value: `${asCurrency(priceSnapshot.open)} / ${asCurrency(priceSnapshot.high)} / ${asCurrency(priceSnapshot.low)}` },
-                { label: 'Daily change', value: asPercent(priceSnapshot.change_pct) },
-                { label: 'Relative volume', value: priceSnapshot.relative_volume ? `${Number(priceSnapshot.relative_volume).toFixed(2)}x` : '—' },
-                { label: 'ATR14', value: priceSnapshot.atr14 ? asPercent(priceSnapshot.atr14) : '—' },
-                { label: 'Key level', value: priceSnapshot.key_level || '—' }
-              ]}
-            />
-          ) : (
-            <EmptyState title="No price snapshot" description={`No latest price snapshot was returned for ${currentTicker}.`} />
-          )}
-        </Section>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <PageSection title="Key levels" subtitle="Latest stored price context and tactical levels.">
+          <SectionState state={price} emptyTitle="No price snapshot" emptyDescription={`No price snapshot exists for ${data.ticker}.`}>
+            {(snapshot) => (
+              <FieldList
+                fields={[
+                  { label: 'Close', value: asCurrency(snapshot.close ?? data.current_price) },
+                  { label: 'Daily change', value: asPercent(snapshot.change_pct) },
+                  { label: 'Support 1 / 2', value: `${asCurrency(snapshot.support1)} / ${asCurrency(snapshot.support2)}` },
+                  { label: 'Resistance 1 / 2', value: `${asCurrency(snapshot.resistance1)} / ${asCurrency(snapshot.resistance2)}` },
+                  { label: '50 / 200 day MA', value: `${asCurrency(snapshot.ma50)} / ${asCurrency(snapshot.ma200)}` },
+                  { label: 'ATR14', value: asCurrency(snapshot.atr14) },
+                  { label: 'Volume vs avg', value: snapshot.volume_vs_avg ? `${snapshot.volume_vs_avg}x` : '—' },
+                  { label: 'Key level note', value: snapshot.key_level || '—' },
+                ]}
+              />
+            )}
+          </SectionState>
+        </PageSection>
 
-        <Section title="Fundamentals and risk" subtitle="Profile, balance-sheet shorthand, dilution risk, and core pressure points.">
+        <PageSection title="Profile and risk" subtitle="Profile state, conviction, and current position context.">
           <FieldList
             fields={[
               { label: 'Exchange', value: data.exchange || '—' },
-              { label: 'Market cap', value: asCompactNumber(data.market_cap) },
-              { label: 'Enterprise value', value: asCompactNumber(data.enterprise_value) },
-              { label: 'Shares outstanding', value: asCompactNumber(data.shares_outstanding) },
               { label: 'Revenue status', value: data.revenue_status || '—' },
-              { label: 'Cash / debt', value: `${data.cash_position_approx || '—'} / ${data.debt_position_approx || '—'}` },
-              { label: 'Dilution risk', value: data.dilution_risk || '—', caption: data.dilution_notes || null },
+              { label: 'Current conviction', value: convictionLabel(decision.conviction) },
+              { label: 'Current stop', value: asCurrency(data.current_stop) },
+              { label: 'Current target', value: asCurrency(data.current_target) },
               { label: 'China dependency', value: data.china_dependency_exposure || '—' },
-              { label: 'Competitive position', value: data.competitive_position || '—' },
-              { label: 'Key risk', value: data.key_risk || '—' }
+              { label: 'Dilution risk', value: data.dilution_risk || '—', caption: data.dilution_notes || undefined },
+              { label: 'Key risk', value: data.key_risk || '—' },
             ]}
           />
-        </Section>
+        </PageSection>
       </div>
 
-      <Section title="Conviction history" subtitle="Recent conviction path from stored runs and analysis trail items.">
-        {convictionSeries.length ? (
-          <div className="stack">
-            <Sparkline values={convictionSeries} />
-            <div className="grid gap-3 md:grid-cols-3">
-              {currentHistory.slice(0, 3).map((run) => (
-                <div key={run.run_id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400">{asRelativeDate(run.started_at)}</div>
-                  <div className="mt-2 text-lg font-semibold text-white">{convictionLabel(run.final_conviction)}</div>
-                  <div className="text-sm text-slate-300">{run.final_verdict || 'No verdict'} / {run.final_action || 'No action'}</div>
-                </div>
+      <div id="stock-panel-catalysts">
+      <PageSection title="Catalyst timeline" subtitle="Sorted catalyst stack with significance and binding context.">
+        <SectionState state={catalysts} emptyTitle="No catalysts" emptyDescription={`No catalysts are stored for ${data.ticker}.`}>
+          {() => (
+            <div className="space-y-3">
+              {sortedCatalysts.map((item) => (
+                <ExpandableCard
+                  key={item.id}
+                  title={item.title}
+                  subtitle={`${asDate(item.date)} • significance ${item.significance ?? '—'}`}
+                  badge={item.binding_status}
+                  badgeTone={item.significance >= 4 ? 'warning' : 'neutral'}
+                  preview={item.description || 'No catalyst description stored.'}
+                  meta={[
+                    <span key="category">{item.category}</span>,
+                    item.source ? <span key="source">{item.source}</span> : null,
+                  ].filter(Boolean)}
+                >
+                  <FieldList
+                    fields={[
+                      { label: 'Amount ceiling', value: asCurrency(item.amount_ceiling) },
+                      { label: 'Next decision point', value: item.next_decision_point || '—' },
+                      { label: 'Priced in', value: item.priced_in || '—' },
+                      { label: 'Reversal risk', value: item.reversal_risk || '—' },
+                    ]}
+                  />
+                </ExpandableCard>
               ))}
             </div>
-          </div>
-        ) : (
-          <EmptyState title="No conviction history" description="Execute a run or ingest a frontier review to start building conviction history." />
-        )}
-      </Section>
+          )}
+        </SectionState>
+      </PageSection>
+      </div>
 
-      <Section title="Catalyst timeline" subtitle="Material catalysts, funding milestones, and next decision points for this ticker.">
-        {catalysts.status === 'loading' || catalysts.status === 'idle' ? (
-          <LoadingState rows={4} />
-        ) : catalysts.status === 'error' ? (
-          <ErrorState description={catalysts.error} />
-        ) : currentCatalysts.length ? (
-          <div className="stack">
-            {currentCatalysts.map((catalyst, index) => (
-              <ExpandableCard
-                key={catalyst.id}
-                title={catalyst.title}
-                subtitle={`${catalyst.category} • ${asDate(catalyst.date)}`}
-                badge={catalyst.binding_status}
-                badgeTone={significanceTone(catalyst.significance)}
-                defaultOpen={index === 0}
-                preview={catalyst.description || catalyst.notes || 'No catalyst description was stored.'}
-                meta={[
-                  <span key="sig">Significance {catalyst.significance ?? '—'}</span>,
-                  catalyst.priced_in ? <span key="priced">{`Priced in: ${catalyst.priced_in}`}</span> : null,
-                  catalyst.timeline_to_next_effect ? <span key="timeline">{catalyst.timeline_to_next_effect}</span> : null,
-                  catalyst.probability_materialising ? <span key="prob">{catalyst.probability_materialising}</span> : null
-                ].filter(Boolean)}
-              >
-                <FieldList
-                  fields={[
-                    { label: 'Next decision point', value: catalyst.next_decision_point || '—' },
-                    { label: 'Reversal risk', value: catalyst.reversal_risk || '—' },
-                    { label: 'Funding ceiling', value: asCurrency(catalyst.amount_ceiling) },
-                    { label: 'Funding obligated', value: asCurrency(catalyst.amount_obligated) },
-                    { label: 'Funding disbursed', value: asCurrency(catalyst.amount_disbursed) }
-                  ]}
-                />
-              </ExpandableCard>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="No catalysts" description={`No catalyst rows were returned for ${currentTicker}.`} />
-        )}
-      </Section>
-
-      <Section title="Analysis trail" subtitle="Collapsible agent and reviewer outputs for the most recent work on this ticker.">
-        {trail.status === 'loading' || trail.status === 'idle' ? (
-          <LoadingState rows={4} />
-        ) : trail.status === 'error' ? (
-          <ErrorState description={trail.error} />
-        ) : currentTrail.length ? (
-          <div className="stack">
-            {currentTrail.map((item, index) => (
-              <ExpandableCard
-                key={item.id}
-                title={item.headline}
-                subtitle={`${item.agent_name} • ${item.created_at ? asDateTime(item.created_at) : 'No timestamp'}`}
-                badge={item.verdict || item.parse_status}
-                badgeTone={item.verdict ? verdictTone(item.verdict) : item.parse_status === 'FAILED' ? 'danger' : 'neutral'}
-                defaultOpen={index === 0}
-                preview={item.summary}
-                meta={[
-                  <span key="kind">{item.agent_kind}</span>,
-                  item.action ? <span key="action">{item.action}</span> : null,
-                  item.conviction ? <span key="conviction">{convictionLabel(item.conviction)}</span> : null
-                ].filter(Boolean)}
-              >
-                {item.raw_markdown ? (
-                  <pre className="m-0 overflow-x-auto whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-4 text-xs leading-6 text-slate-200">
-                    {item.raw_markdown}
-                  </pre>
-                ) : item.parsed_json ? (
-                  <pre className="m-0 overflow-x-auto whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-4 text-xs leading-6 text-slate-200">
-                    {JSON.stringify(item.parsed_json, null, 2)}
-                  </pre>
-                ) : (
-                  <p className="m-0 text-sm text-slate-300">No raw output was stored for this trail item.</p>
-                )}
-              </ExpandableCard>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="No analysis trail yet" description={`No stored agent outputs were returned for ${currentTicker}.`} />
-        )}
-      </Section>
-
-      <Section title="Government funding" subtitle="Government-linked catalysts tracked separately for faster materiality review.">
-        <GovernmentFundingTable rows={governmentFundingRows} emptyMessage={`No government-linked catalysts were returned for ${currentTicker}.`} />
-      </Section>
-
-      <div className="panel-grid">
-        <Section title="Upcoming events" subtitle="Scenario checkpoints and watch windows.">
-          {events.status === 'loading' || events.status === 'idle' ? (
-            <LoadingState rows={3} />
-          ) : events.status === 'error' ? (
-            <ErrorState description={events.error} />
-          ) : currentEvents.length ? (
-            <div className="stack">
-              {currentEvents.map((event) => (
+      <div id="stock-panel-events">
+      <PageSection title="Event windows" subtitle="Upcoming events, impact framing, and countdowns.">
+        <SectionState state={events} emptyTitle="No events" emptyDescription={`No events are stored for ${data.ticker}.`}>
+          {() => (
+            <div className="space-y-3">
+              {sortedEvents.map((event) => (
                 <ExpandableCard
                   key={event.id}
                   title={event.description}
-                  subtitle={`${event.event_type} • ${asDate(event.date)}`}
-                  badge={event.impact || 'UNKNOWN'}
-                  badgeTone={String(event.impact || '').toUpperCase() === 'HIGH' ? 'danger' : String(event.impact || '').toUpperCase() === 'MEDIUM' ? 'warning' : 'neutral'}
-                  preview={event.bull_case || event.description}
+                  subtitle={`${asDate(event.date)} • ${countdownLabel(event.date, event.event_type || 'event')}`}
+                  badge={event.event_type}
+                  badgeTone={event.impact === 'HIGH' ? 'danger' : event.impact === 'MEDIUM' ? 'warning' : 'neutral'}
+                  meta={[
+                    <span key="impact">{event.impact || 'UNKNOWN'} impact</span>,
+                    <span key="status">{event.status || 'UPCOMING'}</span>,
+                  ]}
                 >
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
-                      <div className="mb-2 text-xs uppercase tracking-[0.22em] text-emerald-200/70">Bull case</div>
-                      <p className="m-0 text-sm leading-6 text-slate-200">{event.bull_case || 'No explicit bull case stored.'}</p>
-                    </div>
-                    <div className="rounded-2xl border border-rose-400/15 bg-rose-400/5 p-4">
-                      <div className="mb-2 text-xs uppercase tracking-[0.22em] text-rose-200/70">Bear case</div>
-                      <p className="m-0 text-sm leading-6 text-slate-200">{event.bear_case || 'No explicit bear case stored.'}</p>
-                    </div>
-                  </div>
+                  <FieldList
+                    fields={[
+                      { label: 'Bull case', value: event.bull_case || '—' },
+                      { label: 'Bear case', value: event.bear_case || '—' },
+                      { label: 'Source', value: event.source || '—' },
+                    ]}
+                  />
                 </ExpandableCard>
               ))}
             </div>
-          ) : (
-            <EmptyState title="No upcoming events" description={`There are no events for ${currentTicker}.`} />
           )}
-        </Section>
-
-        <Section title="Research notes" subtitle="Recent research, extraction notes, and sentiment carry-over.">
-          {research.status === 'loading' || research.status === 'idle' ? (
-            <LoadingState rows={3} />
-          ) : research.status === 'error' ? (
-            <ErrorState description={research.error} />
-          ) : currentResearch.length ? (
-            <div className="stack">
-              {currentResearch.map((note) => (
-                <ExpandableCard
-                  key={note.id}
-                  title={note.title}
-                  subtitle={`${note.note_type || 'NOTE'} • ${note.created_at ? asDateTime(note.created_at) : 'No timestamp'}`}
-                  badge={note.category || note.note_type || 'NOTE'}
-                  badgeTone="neutral"
-                  preview={firstReadableLine(note.key_takeaway || note.note_body, 'No note summary stored.')}
-                >
-                  <p className="m-0 text-sm leading-6 text-slate-200">{note.note_body}</p>
-                </ExpandableCard>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No research notes" description={`No notes were returned for ${currentTicker}.`} />
-          )}
-        </Section>
+        </SectionState>
+      </PageSection>
       </div>
 
-      <Section title="Trading journal" subtitle="Open and recent journal entries tied to this ticker.">
-        {journal.status === 'loading' || journal.status === 'idle' ? (
-          <LoadingState rows={3} />
-        ) : journal.status === 'error' ? (
-          <ErrorState description={journal.error} />
-        ) : currentJournal.length ? (
-          <DataTable
-            rows={currentJournal}
-            rowKey={(row) => row.id}
-            columns={[
-              { key: 'status', label: 'Status' },
-              { key: 'direction', label: 'Direction' },
-              { key: 'entry_date', label: 'Entry date', render: (row) => asDate(row.entry_date) },
-              { key: 'entry_price', label: 'Entry', render: (row) => asCurrency(row.entry_price) },
-              { key: 'stop_loss', label: 'Stop', render: (row) => asCurrency(row.stop_loss) },
-              { key: 'target_price', label: 'Target', render: (row) => asCurrency(row.target_price) },
-              { key: 'pnl_percent', label: 'PnL %', render: (row) => asPercent(row.pnl_percent) },
-              { key: 'planned_timeframe', label: 'Timeframe', render: (row) => row.planned_timeframe || '—' },
-              { key: 'thesis', label: 'Thesis', render: (row) => row.thesis || '—' }
-            ]}
-          />
-        ) : (
-          <EmptyState title="No journal entries" description={`No trading journal rows were returned for ${currentTicker}.`} />
-        )}
-      </Section>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div id="stock-panel-research">
+        <PageSection title="Research notes" subtitle="Recent notes generated from ingests, observations, options, and parse failures.">
+          <SectionState state={research} emptyTitle="No research notes" emptyDescription={`No notes are stored for ${data.ticker}.`}>
+            {(notes) => (
+              <TimelineList
+                items={notes.slice(0, 10).map((note) => ({
+                  id: note.id,
+                  title: note.title,
+                  badge: note.note_type,
+                  badgeTone: note.note_type === 'PARSE_FAILED' ? 'danger' : 'info',
+                  meta: [<span key="created">{asDateTime(note.created_at)}</span>, note.category ? <span key="category">{note.category}</span> : null].filter(Boolean),
+                  body: firstReadableLine(note.note_body, 'No note body stored.'),
+                }))}
+              />
+            )}
+          </SectionState>
+        </PageSection>
+        </div>
+
+        <div id="stock-panel-journal">
+        <PageSection title="Trading journal" subtitle="Open and closed trades with explicit empty-state handling.">
+          <SectionState state={journal} emptyTitle="No journal entries" emptyDescription={`No journal entries are stored for ${data.ticker}.`}>
+            {(entries) => (
+              <DataTable
+                rows={entries}
+                emptyMessage="No journal entries."
+                columns={[
+                  { key: 'status', label: 'Status' },
+                  { key: 'direction', label: 'Direction' },
+                  { key: 'entry_date', label: 'Entry', render: (row) => asDate(row.entry_date) },
+                  { key: 'entry_price', label: 'Entry price', render: (row) => asCurrency(row.entry_price) },
+                  { key: 'target_price', label: 'Target', render: (row) => asCurrency(row.target_price) },
+                  { key: 'pnl_percent', label: 'PnL %', render: (row) => asPercent(row.pnl_percent) },
+                ]}
+              />
+            )}
+          </SectionState>
+        </PageSection>
+        </div>
+      </div>
+
+      <div id="stock-panel-history">
+      <PageSection title="Decision history" subtitle="Recent run-level decisions for this stock.">
+        <SectionState state={history} emptyTitle="No decision history" emptyDescription={`No analysis runs are stored for ${data.ticker}.`}>
+          {(runs) => (
+            <DataTable
+              rows={runs}
+              emptyMessage="No runs yet."
+              columns={[
+                { key: 'started_at', label: 'Started', render: (row) => asDateTime(row.started_at) },
+                { key: 'final_verdict', label: 'Verdict' },
+                { key: 'final_action', label: 'Action' },
+                { key: 'final_conviction', label: 'Conviction', render: (row) => convictionLabel(row.final_conviction) },
+                { key: 'one_line_summary', label: 'Summary', render: (row) => row.one_line_summary || '—' },
+              ]}
+            />
+          )}
+        </SectionState>
+      </PageSection>
+      </div>
+
+      <div id="stock-panel-trail">
+      <PageSection title="Frontier report trail" subtitle="Raw MINERVA report visibility, parsed sections, and failed-section debugging.">
+        <SectionState state={trail} emptyTitle="No report trail" emptyDescription={`No ingested report trail exists for ${data.ticker}.`}>
+          {(items) => (
+            <div className="space-y-4">
+              {items.map((item) => (
+                <ExpandableCard
+                  key={item.run_id}
+                  title={item.summary || item.run_id}
+                  subtitle={`${asDateTime(item.started_at)} • ${item.status}`}
+                  badge={item.parse_status}
+                  badgeTone={item.parse_status === 'COMPLETE' ? 'positive' : item.parse_status === 'PARTIAL' ? 'warning' : 'danger'}
+                  preview={item.failed_sections?.length ? `Failed sections: ${item.failed_sections.join(', ')}` : 'All tracked sections parsed without recorded failures.'}
+                  meta={[
+                    <span key="verdict">{item.verdict || 'No verdict'}</span>,
+                    <span key="action">{item.action || 'No action'}</span>,
+                    <span key="conviction">{convictionLabel(item.conviction)}</span>,
+                  ]}
+                >
+                  {item.section_names?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {item.section_names.map((section) => (
+                        <Badge key={section} tone={item.failed_sections?.includes(section) ? 'danger' : 'info'}>{section}</Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  {item.run_notes ? (
+                    <div className="space-y-2">
+                      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Tripwires</div>
+                      <PreBlock>{item.run_notes}</PreBlock>
+                    </div>
+                  ) : null}
+                  {item.raw_report ? (
+                    <div className="space-y-2">
+                      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Raw MINERVA report</div>
+                      <PreBlock>{item.raw_report}</PreBlock>
+                    </div>
+                  ) : (
+                    <EmptyState title="No raw report stored" description="This run does not include raw report text." />
+                  )}
+                </ExpandableCard>
+              ))}
+            </div>
+          )}
+        </SectionState>
+      </PageSection>
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="button" onClick={() => { window.location.hash = '#/analysis'; }}>
+          Ingest another report
+        </Button>
+      </div>
     </div>
   );
 }

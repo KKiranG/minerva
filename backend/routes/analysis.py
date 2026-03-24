@@ -2,41 +2,54 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..database import connect, decode_json_field, fetch_all, fetch_one
-from ..models import AnalysisRunCreate, AnalysisRunResponse
-from ..pipeline.orchestrator import create_analysis_run, run_execution, run_generation
+from ..http import pagination
+from ..models import (
+    AnalysisRunCreate,
+    AnalysisRunIngestRequest,
+    AnalysisRunResponse,
+    MinervaIngestRequest,
+    MinervaIngestResponse,
+)
+from ..parsers.extraction import extract_sections
+from ..pipeline.orchestrator import create_analysis_run, ingest_minerva_report, ingest_report_for_run
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 
-def _serialize_agent_output(row: Dict[str, Any]) -> Dict[str, Any]:
-    parsed = decode_json_field(row.get("parsed_json"), {})
+def _serialize_trail_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = decode_json_field(row.get("consistency_report"), {})
+    sections = extract_sections(row.get("frontier_decision_raw") or "") if row.get("frontier_decision_raw") else {}
+    parse_status = metadata.get("parse_status") or row.get("frontier_review_status")
     return {
-        "id": row["id"],
         "run_id": row["run_id"],
         "ticker": row["ticker"],
-        "agent_number": row["agent_number"],
-        "agent_name": row["agent_name"],
-        "agent_kind": row["agent_kind"],
-        "parse_status": row["parse_status"],
-        "model": row.get("model"),
-        "error_message": row.get("error_message"),
-        "created_at": row.get("created_at"),
-        "raw_markdown": row.get("raw_markdown"),
-        "parsed_json": parsed,
-        "run_status": row.get("run_status"),
-        "run_verdict": row.get("run_verdict"),
-        "run_action": row.get("run_action"),
-        "run_conviction": row.get("run_conviction"),
+        "status": row["status"],
+        "started_at": row.get("started_at"),
+        "completed_at": row.get("completed_at"),
+        "parse_status": parse_status,
+        "verdict": row.get("final_verdict"),
+        "action": row.get("final_action"),
+        "conviction": row.get("final_conviction"),
+        "summary": row.get("one_line_summary"),
+        "raw_report": row.get("frontier_decision_raw"),
+        "raw_markdown": row.get("frontier_decision_raw"),
+        "failed_sections": metadata.get("failed_sections", []),
+        "section_names": metadata.get("section_names", []),
+        "header": metadata.get("header", {}),
+        "sections": sections,
+        "run_notes": row.get("run_notes"),
+        "changed_since_last_analysis": bool(row.get("changed_since_last_analysis")),
     }
 
 
 @router.get("/history")
-async def list_run_history(ticker: str) -> List[Dict[str, Any]]:
+async def list_run_history(ticker: str, limit: int = 24, offset: int = 0) -> List[Dict[str, Any]]:
     conn = await connect()
     try:
+        limit, offset = pagination(limit, offset, maximum=100)
         rows = await fetch_all(
             conn,
             """
@@ -58,12 +71,14 @@ async def list_run_history(ticker: str) -> List[Dict[str, Any]]:
                 one_line_summary,
                 synthesis_text,
                 frontier_review_status,
-                changed_since_last_analysis
+                changed_since_last_analysis,
+                run_notes
             FROM analysis_runs
             WHERE ticker = ?
-            ORDER BY started_at DESC
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT ? OFFSET ?
             """,
-            (ticker.upper(),),
+            (ticker.upper(), limit, offset),
         )
         return rows
     finally:
@@ -71,28 +86,22 @@ async def list_run_history(ticker: str) -> List[Dict[str, Any]]:
 
 
 @router.get("/trail")
-async def list_agent_trail(ticker: str, limit: int = 24) -> List[Dict[str, Any]]:
+async def list_report_trail(ticker: str, limit: int = 12, offset: int = 0) -> List[Dict[str, Any]]:
     conn = await connect()
     try:
-        capped_limit = max(1, min(limit, 100))
+        limit, offset = pagination(limit, offset, maximum=100)
         rows = await fetch_all(
             conn,
             """
-            SELECT
-                ao.*,
-                ar.status AS run_status,
-                ar.final_verdict AS run_verdict,
-                ar.final_action AS run_action,
-                ar.final_conviction AS run_conviction
-            FROM agent_outputs ao
-            JOIN analysis_runs ar ON ar.run_id = ao.run_id
-            WHERE ao.ticker = ?
-            ORDER BY ao.created_at DESC, ao.agent_number ASC
-            LIMIT ?
+            SELECT *
+            FROM analysis_runs
+            WHERE ticker = ?
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT ? OFFSET ?
             """,
-            (ticker.upper(), capped_limit),
+            (ticker.upper(), limit, offset),
         )
-        return [_serialize_agent_output(row) for row in rows]
+        return [_serialize_trail_row(row) for row in rows]
     finally:
         await conn.close()
 
@@ -101,28 +110,31 @@ async def list_agent_trail(ticker: str, limit: int = 24) -> List[Dict[str, Any]]
 async def create_run(payload: AnalysisRunCreate):
     conn = await connect()
     try:
-        result = await create_analysis_run(conn, payload.ticker, payload.extraction_id, payload.mode, payload.notes)
-        return result
+        row = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (payload.ticker.upper(),))
+        if not row:
+            raise HTTPException(status_code=422, detail=f"Ticker '{payload.ticker.upper()}' does not exist in stocks.")
+        return await create_analysis_run(conn, payload.ticker, payload.extraction_id, payload.mode, payload.notes)
     finally:
         await conn.close()
 
 
-@router.post("/runs/{run_id}/generate-tasks")
-async def generate_tasks(run_id: str):
+@router.post("/ingest", response_model=MinervaIngestResponse)
+async def ingest_analysis(payload: MinervaIngestRequest):
     conn = await connect()
     try:
-        created = await run_generation(conn, run_id)
-        return {"run_id": run_id, "task_files": created}
+        return await ingest_minerva_report(conn, payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     finally:
         await conn.close()
 
 
-@router.post("/runs/{run_id}/execute")
-async def execute_run(run_id: str):
+@router.post("/runs/{run_id}/ingest")
+async def ingest_existing_run(run_id: str, payload: AnalysisRunIngestRequest, source_model: str = "manual-frontier"):
     conn = await connect()
     try:
-        result = await run_execution(conn, run_id)
-        row = await fetch_one(conn, "SELECT * FROM analysis_runs WHERE run_id = ?", (run_id,))
-        return {"run": row, "execution": result}
+        return await ingest_report_for_run(conn, run_id, payload.raw_text, source_model)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     finally:
         await conn.close()

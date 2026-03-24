@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import List
+import sqlite3
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 
-from ..database import connect, execute, fetch_all, fetch_one, json_dumps
+from ..database import connect, execute, fetch_all, fetch_one, json_dumps, utc_now
+from ..http import handle_integrity_error, pagination, validate_stock_patch_fields
 from ..models import StockCreate, StockPatch, StockResponse
 from .serializers import serialize_stock
 
@@ -72,10 +74,18 @@ def _normalize_stock_payload(data):
 
 
 @router.get("", response_model=List[StockResponse])
-async def list_stocks():
+async def list_stocks(limit: int = 100, offset: int = 0, q: Optional[str] = None):
     conn = await connect()
     try:
-        rows = await fetch_all(conn, "SELECT * FROM stocks ORDER BY ticker ASC")
+        limit, offset = pagination(limit, offset)
+        params = []
+        query = "SELECT * FROM stocks"
+        if q:
+            params.extend([f"%{q.strip().upper()}%", f"%{q.strip()}%"])
+            query += " WHERE ticker LIKE ? OR company_name LIKE ?"
+        query += " ORDER BY ticker ASC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = await fetch_all(conn, query, params)
         return [serialize_stock(row) for row in rows]
     finally:
         await conn.close()
@@ -85,19 +95,20 @@ async def list_stocks():
 async def create_stock(payload: StockCreate):
     conn = await connect()
     try:
-        existing = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (payload.ticker.upper(),))
-        if existing:
-            raise HTTPException(status_code=409, detail="Stock already exists")
         data = _normalize_stock_payload(payload.model_dump())
         data["ticker"] = payload.ticker.upper()
-        placeholders = ", ".join(["?"] * len(STOCK_COLUMNS))
-        columns = ", ".join(STOCK_COLUMNS)
-        await execute(
-            conn,
-            f"INSERT INTO stocks ({columns}, updated_at) VALUES ({placeholders}, CURRENT_TIMESTAMP)",
-            tuple(data.get(column) for column in STOCK_COLUMNS),
-        )
-        row = await fetch_one(conn, "SELECT * FROM stocks WHERE ticker = ?", (payload.ticker.upper(),))
+        columns = ", ".join((*STOCK_COLUMNS, "created_at", "updated_at"))
+        placeholders = ", ".join(["?"] * (len(STOCK_COLUMNS) + 2))
+        now = utc_now()
+        try:
+            await execute(
+                conn,
+                f"INSERT INTO stocks ({columns}) VALUES ({placeholders})",
+                tuple(data.get(column) for column in STOCK_COLUMNS) + (now, now),
+            )
+        except sqlite3.IntegrityError as error:
+            raise handle_integrity_error(error) from error
+        row = await fetch_one(conn, "SELECT * FROM stocks WHERE ticker = ?", (data["ticker"],))
         return serialize_stock(row)
     finally:
         await conn.close()
@@ -111,16 +122,16 @@ async def update_stock(ticker: str, payload: StockPatch):
         if not existing:
             raise HTTPException(status_code=404, detail="Stock not found")
         data = payload.model_dump(exclude_unset=True)
+        validate_stock_patch_fields(data)
         if not data:
             return serialize_stock(existing)
         normalized = _normalize_stock_payload(data)
         set_clause = ", ".join(f"{column} = ?" for column in normalized.keys())
-        values = list(normalized.values()) + [ticker.upper()]
-        await execute(
-            conn,
-            f"UPDATE stocks SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE ticker = ?",
-            values,
-        )
+        values = list(normalized.values()) + [utc_now(), ticker.upper()]
+        try:
+            await execute(conn, f"UPDATE stocks SET {set_clause}, updated_at = ? WHERE ticker = ?", values)
+        except sqlite3.IntegrityError as error:
+            raise handle_integrity_error(error) from error
         row = await fetch_one(conn, "SELECT * FROM stocks WHERE ticker = ?", (ticker.upper(),))
         return serialize_stock(row)
     finally:

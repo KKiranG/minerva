@@ -1,6 +1,6 @@
-ROLE: You are a senior research analyst covering U.S. critical minerals
-and rare earth equities. Produce a comprehensive intelligence extraction
-for a swing-trading decision system.
+ROLE: You are a frontier research analyst covering U.S. critical minerals
+and rare earth equities. Produce a comprehensive research package for a
+critical-minerals intelligence dashboard.
 
 STOCKS: [TICKER_LIST]
 TIME WINDOW: [START_DATE] to [END_DATE]
@@ -8,7 +8,7 @@ CUSTOM FOCUS: [OPTIONAL — any specific areas to emphasise]
 
 INSTRUCTIONS:
 Cover ALL of the following for EACH stock. If nothing is relevant in a
-category, say "No developments" — do not omit the category.
+category, say "No developments" rather than inventing details.
 
 CATEGORY 1: GOVERNMENT & POLICY
 — New/updated government funding (specify: agency, instrument, amount,
@@ -71,21 +71,9 @@ CATEGORY 7: UPCOMING EVENTS (30-day forward)
 — Conferences, investor days
 — Hearings, votes
 
-OUTPUT: Organise by STOCK, then by CATEGORY. End with a SECTOR OVERVIEW.
+OUTPUT:
+Organise by STOCK, then by CATEGORY. End with a SECTOR OVERVIEW.
 
-STRUCTURED APPENDIX:
-After your research, produce these tables at the end of your response:
-
-NEW_CATALYSTS table:
-| Date | Ticker | Category | Title | Amount_USD | Binding_Status | Significance_1to5 | Source |
-
-PRICE_SNAPSHOTS table:
-| Ticker | Close | Change_Pct | Vol_vs_Avg | Above_50MA | Above_200MA | Key_Level |
-
-UPCOMING_EVENTS table:
-| Date | Ticker | Type | Description | Impact | Source |
-
-OPTIONS_NOTABLE table:
-| Ticker | Call_or_Put | Strike | Expiry | Volume | OI | Notes |
-
-Be thorough. Follow leads. Include dates and numbers. Flag uncertainty.
+This is research output, not the final dashboard contract.
+Do not force the answer into MINERVA format unless explicitly asked.
+Be thorough. Follow leads. Include dates, numbers, source quality, and uncertainty.
