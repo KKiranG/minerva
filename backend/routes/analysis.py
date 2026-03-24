@@ -12,11 +12,15 @@ from ..models import (
     AnalysisRunResponse,
     MinervaIngestRequest,
     MinervaIngestResponse,
+    MinervaValidationReport,
+    MinervaValidationResponse,
 )
-from ..parsers.extraction import extract_sections
+from ..parsers.extraction import SECTION_NAMES, extract_sections, parse_minerva_document
 from ..pipeline.orchestrator import create_analysis_run, ingest_minerva_report, ingest_report_for_run
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+
+REQUIRED_REPORT_SECTIONS = ["MINERVA_REPORT", "NARRATIVE", "DECISION", "CATALYSTS", "PRICE_DATA", "EVENTS", "OPTIONS", "TRIPWIRES"]
 
 
 def _serialize_trail_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -43,6 +47,55 @@ def _serialize_trail_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "run_notes": row.get("run_notes"),
         "changed_since_last_analysis": bool(row.get("changed_since_last_analysis")),
     }
+
+
+def validate_minerva_ingest(payload: MinervaIngestRequest) -> MinervaValidationResponse:
+    parsed_reports = parse_minerva_document(payload.raw_text)
+    reports: List[MinervaValidationReport] = []
+    for report in parsed_reports:
+        header = report.get("header") or {}
+        sections = report.get("sections") or {}
+        section_names = [name for name in SECTION_NAMES if name in sections]
+        empty_sections = [name for name in section_names if not str(sections.get(name) or "").strip()]
+        missing_sections = [name for name in REQUIRED_REPORT_SECTIONS if name not in sections]
+        has_decision = bool(report.get("decision"))
+        report_status = "FAILED" if not has_decision else ("PARTIAL" if empty_sections or missing_sections else "COMPLETE")
+        reports.append(
+            MinervaValidationReport(
+                ticker=header.get("ticker"),
+                date=header.get("date"),
+                source=header.get("source"),
+                parse_status=report_status,
+                section_names=section_names,
+                empty_sections=empty_sections,
+                missing_sections=missing_sections,
+                has_decision=has_decision,
+                catalysts_rows=len(report.get("catalysts") or []),
+                events_rows=len(report.get("events") or []),
+                options_rows=len(report.get("options") or []),
+                tripwires_rows=len(report.get("tripwires") or []),
+                price_metrics=len(report.get("price_data") or {}),
+            )
+        )
+
+    parse_status = "FAILED"
+    if reports:
+        statuses = {report.parse_status for report in reports}
+        if "FAILED" in statuses:
+            parse_status = "FAILED"
+        elif "PARTIAL" in statuses:
+            parse_status = "PARTIAL"
+        else:
+            parse_status = "COMPLETE"
+    scope = sorted({report.ticker for report in reports if report.ticker and report.ticker != "UNKNOWN"})
+    valid = bool(reports) and all(report.has_decision for report in reports)
+    return MinervaValidationResponse(
+        valid=valid,
+        parse_status=parse_status,
+        report_count=len(reports),
+        scope=scope,
+        reports=reports,
+    )
 
 
 @router.get("/history")
@@ -127,6 +180,11 @@ async def ingest_analysis(payload: MinervaIngestRequest):
         raise HTTPException(status_code=422, detail=str(error)) from error
     finally:
         await conn.close()
+
+
+@router.post("/validate", response_model=MinervaValidationResponse)
+async def validate_analysis(payload: MinervaIngestRequest):
+    return validate_minerva_ingest(payload)
 
 
 @router.post("/runs/{run_id}/ingest")

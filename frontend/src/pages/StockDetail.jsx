@@ -40,6 +40,7 @@ export default function StockDetail({ api, ticker, params }) {
   const events = useAsyncResource((signal) => api.getEvents({ ticker, signal }), [ticker]);
   const research = useAsyncResource((signal) => api.getResearch({ ticker, signal }), [ticker]);
   const journal = useAsyncResource((signal) => api.getJournal({ ticker, signal }), [ticker]);
+  const thesisHistory = useAsyncResource((signal) => api.getThesisHistory(ticker, { signal }), [ticker]);
 
   if (stock.status === 'loading' || stock.status === 'idle') return <LoadingState rows={8} />;
   if (stock.status === 'error') return <EmptyState title="Stock unavailable" description={stock.error} />;
@@ -282,6 +283,28 @@ export default function StockDetail({ api, ticker, params }) {
                 { key: 'final_conviction', label: 'Conviction', render: (row) => convictionLabel(row.final_conviction) },
                 { key: 'one_line_summary', label: 'Summary', render: (row) => row.one_line_summary || '—' },
               ]}
+            />
+          )}
+        </SectionState>
+      </PageSection>
+      </div>
+
+      <div id="stock-panel-thesis">
+      <PageSection title="Thesis evolution" subtitle="Chronological record of how the thesis has changed across reports.">
+        <SectionState state={thesisHistory} emptyTitle="No thesis history" emptyDescription={`No thesis evolution has been logged for ${data.ticker}.`}>
+          {(items) => (
+            <TimelineList
+              items={items.map((item) => ({
+                id: item.id,
+                title: item.summary || item.thesis_text || 'Stored thesis',
+                badge: item.verdict || 'THESIS',
+                badgeTone: verdictTone(item.verdict),
+                meta: [
+                  <span key="date">{asDate(item.as_of_date)}</span>,
+                  <span key="conviction">{convictionLabel(item.conviction)}</span>,
+                ],
+                body: item.thesis_text || 'No thesis text stored.',
+              }))}
             />
           )}
         </SectionState>

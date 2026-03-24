@@ -148,3 +148,26 @@ async def get_stock(ticker: str):
         return serialize_stock(row)
     finally:
         await conn.close()
+
+
+@router.get("/{ticker}/thesis-history")
+async def get_thesis_history(ticker: str):
+    conn = await connect()
+    try:
+        stock = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker.upper(),))
+        if not stock:
+            raise HTTPException(status_code=404, detail="Stock not found")
+        rows = await fetch_all(
+            conn,
+            """
+            SELECT tl.*, ar.final_verdict AS verdict, ar.final_conviction AS conviction
+            FROM thesis_log tl
+            LEFT JOIN analysis_runs ar ON ar.run_id = tl.run_id
+            WHERE tl.ticker = ?
+            ORDER BY tl.as_of_date DESC, tl.id DESC
+            """,
+            (ticker.upper(),),
+        )
+        return rows
+    finally:
+        await conn.close()

@@ -18,6 +18,8 @@ const mockDomain = {
   stocks: [],
 };
 
+const inFlightRequests = new Map();
+
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -28,12 +30,12 @@ const buildQuery = (params = {}) => {
   return query ? `?${query}` : '';
 };
 
-async function request(path, { method = 'GET', body, signal } = {}) {
+async function request(path, { method = 'GET', body, signal, headers, rawBody } = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     method,
     signal,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+    headers: body ? { 'Content-Type': 'application/json', ...headers } : headers,
+    body: body ? JSON.stringify(body) : rawBody,
   });
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
@@ -44,15 +46,29 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   return payload;
 }
 
+async function requestDedup(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') {
+    return request(path, options);
+  }
+  const key = `${method}:${path}`;
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key);
+  }
+  const pending = request(path, options).finally(() => inFlightRequests.delete(key));
+  inFlightRequests.set(key, pending);
+  return pending;
+}
+
 async function requestWithMock(path, options, resolver) {
   if (ENABLE_MOCKS) {
     try {
-      return await request(path, options);
+      return await requestDedup(path, options);
     } catch {
       return resolver();
     }
   }
-  return request(path, options);
+  return requestDedup(path, options);
 }
 
 export const api = {
@@ -62,6 +78,9 @@ export const api = {
   createStock: (payload, options = {}) => request('/api/stocks', { method: 'POST', body: payload, signal: options.signal }),
 
   getStock: (ticker, options = {}) => request(`/api/stocks/${encodeURIComponent(String(ticker).toUpperCase())}`, { signal: options.signal }),
+
+  getThesisHistory: (ticker, { signal } = {}) =>
+    requestDedup(`/api/stocks/${encodeURIComponent(String(ticker).toUpperCase())}/thesis-history`, { signal }),
 
   getOverview: (options = {}) =>
     requestWithMock('/api/dashboard/overview', { signal: options.signal }, () => mockDomain.overview),
@@ -106,11 +125,42 @@ export const api = {
   ingestMinervaReport: (payload, options = {}) =>
     request('/api/analysis/ingest', { method: 'POST', body: payload, signal: options.signal }),
 
+  validateMinervaReport: (payload, options = {}) =>
+    request('/api/ingest/validate', { method: 'POST', body: payload, signal: options.signal }),
+
+  ingestMinervaFile: ({ file, mode = 'DELTA', source_model = 'manual-frontier', custom_focus, signal }) =>
+    request(
+      `/api/ingest/file${buildQuery({
+        filename: file?.name,
+        mode,
+        source_model,
+        custom_focus,
+      })}`,
+      {
+        method: 'POST',
+        rawBody: file,
+        headers: { 'Content-Type': file?.type || 'text/markdown' },
+        signal,
+      }
+    ),
+
   ingestRunReport: (runId, payload, options = {}) =>
     request(`/api/analysis/runs/${encodeURIComponent(runId)}/ingest`, { method: 'POST', body: payload, signal: options.signal }),
 
   getMinervaFormat: ({ signal } = {}) =>
     request('/api/prompts/minerva-format', { signal }),
+
+  getPromptTemplates: ({ signal } = {}) =>
+    requestDedup('/api/prompts/templates', { signal }),
+
+  getExtraction: (extractionId, { signal } = {}) =>
+    requestDedup(`/api/extractions/${encodeURIComponent(extractionId)}`, { signal }),
+
+  getReport: (runId, { signal } = {}) =>
+    requestDedup(`/api/reports/${encodeURIComponent(runId)}`, { signal }),
+
+  getHealth: ({ signal } = {}) =>
+    requestDedup('/api/health', { signal }),
 
   search: ({ q, limit = 10, signal }) =>
     requestWithMock(`/api/search${buildQuery({ q, limit })}`, { signal }, () => ({

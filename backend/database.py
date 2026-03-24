@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Iterable, List, Mapping, Optional, Sequence
@@ -61,6 +62,7 @@ SCHEMA_STATEMENTS = [
         scope TEXT NOT NULL,
         mode TEXT NOT NULL CHECK(mode IN ('FULL_SCAN', 'DELTA')),
         source_model TEXT NOT NULL,
+        content_hash TEXT,
         time_window_start TEXT,
         time_window_end TEXT,
         raw_text TEXT NOT NULL,
@@ -285,10 +287,76 @@ SCHEMA_STATEMENTS = [
         FOREIGN KEY(run_id) REFERENCES analysis_runs(run_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS conviction_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        run_id TEXT,
+        extraction_id INTEGER,
+        as_of_date TEXT NOT NULL,
+        verdict TEXT CHECK(verdict IN ('BULLISH', 'BEARISH', 'NEUTRAL')),
+        action TEXT CHECK(action IN ('BUY', 'SELL', 'HOLD', 'WATCH', 'AVOID')),
+        conviction INTEGER,
+        summary TEXT,
+        source_model TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(run_id) REFERENCES analysis_runs(run_id),
+        FOREIGN KEY(extraction_id) REFERENCES extractions(id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS thesis_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        run_id TEXT,
+        extraction_id INTEGER,
+        as_of_date TEXT NOT NULL,
+        thesis_text TEXT NOT NULL,
+        summary TEXT,
+        source_section TEXT,
+        content_hash TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(run_id) REFERENCES analysis_runs(run_id),
+        FOREIGN KEY(extraction_id) REFERENCES extractions(id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS options_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        run_id TEXT,
+        extraction_id INTEGER,
+        report_date TEXT NOT NULL,
+        option_type TEXT,
+        strike REAL,
+        expiry TEXT,
+        volume REAL,
+        open_interest REAL,
+        notes TEXT,
+        raw_row TEXT,
+        source TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(run_id) REFERENCES analysis_runs(run_id),
+        FOREIGN KEY(extraction_id) REFERENCES extractions(id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS prompt_templates (
+        slug TEXT PRIMARY KEY,
+        prompt_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source_path TEXT,
+        content TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
 ]
 
 INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_catalysts_ticker_date ON catalysts(ticker, date)",
+    "CREATE INDEX IF NOT EXISTS idx_extractions_content_hash ON extractions(content_hash)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_unique_ticker_date ON price_snapshots(ticker, date)",
     "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON price_snapshots(ticker, date)",
     "CREATE INDEX IF NOT EXISTS idx_events_ticker_date ON upcoming_events(ticker, date)",
@@ -296,6 +364,9 @@ INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_outputs_run_agent ON agent_outputs(run_id, agent_number)",
     "CREATE INDEX IF NOT EXISTS idx_runs_ticker_status ON analysis_runs(ticker, status)",
     "CREATE INDEX IF NOT EXISTS idx_journal_ticker_status ON trading_journal(ticker, status)",
+    "CREATE INDEX IF NOT EXISTS idx_conviction_ticker_date ON conviction_history(ticker, as_of_date)",
+    "CREATE INDEX IF NOT EXISTS idx_thesis_ticker_date ON thesis_log(ticker, as_of_date)",
+    "CREATE INDEX IF NOT EXISTS idx_options_ticker_date ON options_activity(ticker, report_date)",
 ]
 
 ADDITIONAL_COLUMNS = {
@@ -354,6 +425,9 @@ ADDITIONAL_COLUMNS = {
         "outcome TEXT",
         "outcome_date TEXT",
     ],
+    "extractions": [
+        "content_hash TEXT",
+    ],
 }
 
 BOOL_LIST_DEFAULTS = {"secondary_minerals", "affected_tickers", "pattern_tags", "related_catalysts", "related_stocks", "tags"}
@@ -372,6 +446,9 @@ async def connect(db_path: Optional[Path] = None) -> aiosqlite.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(path)
     conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA journal_mode=WAL")
+    await conn.execute("PRAGMA synchronous=NORMAL")
+    await conn.execute("PRAGMA busy_timeout=5000")
     await conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -383,8 +460,10 @@ async def init_db(db_path: Optional[Path] = None) -> None:
             await conn.execute(statement)
         await _apply_column_migrations(conn)
         await _dedupe_price_snapshots(conn)
+        await _backfill_content_hashes(conn)
         for statement in INDEX_STATEMENTS:
             await conn.execute(statement)
+        await conn.execute("ANALYZE")
         await conn.commit()
     finally:
         await conn.close()
@@ -413,6 +492,15 @@ async def _dedupe_price_snapshots(conn: aiosqlite.Connection) -> None:
         )
         """
     )
+
+
+async def _backfill_content_hashes(conn: aiosqlite.Connection) -> None:
+    rows = await fetch_all(conn, "SELECT id, raw_text FROM extractions WHERE content_hash IS NULL OR content_hash = ''")
+    for row in rows:
+        await conn.execute(
+            "UPDATE extractions SET content_hash = ? WHERE id = ?",
+            (sha256_text(row.get("raw_text") or ""), row["id"]),
+        )
 
 
 async def fetch_all(conn: aiosqlite.Connection, query: str, params: Iterable[Any] = ()) -> List[Mapping[str, Any]]:
@@ -444,6 +532,10 @@ async def executemany(conn: aiosqlite.Connection, query: str, params: Iterable[I
 
 def json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def decode_json_field(value: Any, default: Any) -> Any:

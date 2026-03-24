@@ -17,8 +17,8 @@ def test_parse_minerva_document_single_report():
     assert "DECISION" in report["sections"]
     assert parse_key_value_table(report["sections"]["DECISION"])["Verdict"] == "BULLISH"
     catalysts = parse_markdown_table_block(report["sections"]["CATALYSTS"])
-    assert catalysts[0]["Ticker"] == "MP"
-    assert catalysts[0]["Binding_Status"] == "OBLIGATED"
+    assert catalysts[0]["ticker"] == "MP"
+    assert catalysts[0]["binding_status"] == "OBLIGATED"
 
 
 def test_parse_minerva_document_multiple_reports():

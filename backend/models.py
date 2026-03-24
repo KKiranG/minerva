@@ -48,9 +48,17 @@ AGENT_ONE_BINDING_MAP = {
     "COMPLETED": "COMPLETED",
     "LOI": "LOI_SIGNED",
     "LOI_SIGNED": "LOI_SIGNED",
+    "SIGNED": "LOI_SIGNED",
     "ANNOUNCED": "ANNOUNCED",
     "PROPOSED": "PROPOSED",
     "CONDITIONAL": "CONDITIONAL",
+    "PENDING": "PROPOSED",
+    "IN_PROGRESS": "DISBURSING",
+    "ACTIVE": "DISBURSING",
+    "DONE": "COMPLETED",
+    "WITHDRAWN": "CANCELLED",
+    "EXPIRED": "CANCELLED",
+    "CANCELLED": "CANCELLED",
 }
 
 VERDICTS = {"BULLISH", "BEARISH", "NEUTRAL"}
@@ -60,6 +68,7 @@ DILUTION_RISKS = {"HIGH", "MEDIUM", "LOW", "MINIMAL"}
 EVENT_DATE_PRECISIONS = {"EXACT", "WEEK", "MONTH", "QUARTER", "UNKNOWN"}
 EVENT_STATUSES = {"UPCOMING", "COMPLETE", "CANCELLED"}
 EXIT_REASONS = {"TARGET_HIT", "STOP_HIT", "THESIS_INVALIDATED", "TIME_EXPIRED", "PARTIAL_TAKE", "UPGRADED", "DOWNGRADED", "FORCED"}
+INGEST_MODES = {"FULL_SCAN", "DELTA"}
 
 
 def _validate_choice(value: Optional[str], allowed: set[str], field_name: str) -> Optional[str]:
@@ -77,7 +86,14 @@ class APIMessage(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+    database_status: str
     database_path: str
+    table_count: int
+    stocks_tracked: int
+    last_ingest: Optional[str] = None
+    ollama_available: bool
+    version: str
+    utc_time: str
 
 
 class StockBase(BaseModel):
@@ -380,6 +396,19 @@ class ExtractionIngestRequest(BaseModel):
     time_window_end: Optional[str] = None
     custom_focus: Optional[str] = None
 
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        return _validate_choice(value, INGEST_MODES, "mode") or "DELTA"
+
+    @field_validator("raw_text")
+    @classmethod
+    def validate_raw_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("raw_text must not be empty")
+        return cleaned
+
 
 class ExtractionIngestResponse(BaseModel):
     extraction_id: int
@@ -393,6 +422,11 @@ class AnalysisRunCreate(BaseModel):
     extraction_id: Optional[int] = None
     mode: str = "DELTA"
     notes: Optional[str] = None
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        return _validate_choice(value, INGEST_MODES, "mode") or "DELTA"
 
 
 class AnalysisRunResponse(BaseModel):
@@ -411,6 +445,14 @@ class AnalysisRunResponse(BaseModel):
 class AnalysisRunIngestRequest(BaseModel):
     raw_text: str
 
+    @field_validator("raw_text")
+    @classmethod
+    def validate_raw_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("raw_text must not be empty")
+        return cleaned
+
 
 class MinervaIngestRequest(BaseModel):
     raw_text: str
@@ -418,13 +460,30 @@ class MinervaIngestRequest(BaseModel):
     source_model: str = "manual-frontier"
     custom_focus: Optional[str] = None
 
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        return _validate_choice(value, INGEST_MODES, "mode") or "DELTA"
+
+    @field_validator("raw_text")
+    @classmethod
+    def validate_raw_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("raw_text must not be empty")
+        return cleaned
+
 
 class MinervaRunResult(BaseModel):
     run_id: str
     ticker: str
     parse_status: str
     catalysts_stored: int = 0
+    catalysts_inserted: int = 0
+    catalysts_updated: int = 0
     events_stored: int = 0
+    events_inserted: int = 0
+    events_updated: int = 0
     price_snapshot_stored: bool = False
     decision_stored: bool = False
     notes_stored: int = 0
@@ -436,6 +495,80 @@ class MinervaIngestResponse(BaseModel):
     parse_status: str
     scope: List[str]
     reports: List[MinervaRunResult]
+    tickers_processed: List[str] = Field(default_factory=list)
+    overall_status: Optional[str] = None
+    total_time_ms: Optional[int] = None
+    results: Dict[str, MinervaRunResult] = Field(default_factory=dict)
+
+
+class MinervaValidationReport(BaseModel):
+    ticker: Optional[str] = None
+    date: Optional[str] = None
+    source: Optional[str] = None
+    parse_status: str
+    section_names: List[str] = Field(default_factory=list)
+    empty_sections: List[str] = Field(default_factory=list)
+    missing_sections: List[str] = Field(default_factory=list)
+    has_decision: bool = False
+    catalysts_rows: int = 0
+    events_rows: int = 0
+    options_rows: int = 0
+    tripwires_rows: int = 0
+    price_metrics: int = 0
+
+
+class MinervaValidationResponse(BaseModel):
+    valid: bool
+    parse_status: str
+    report_count: int
+    scope: List[str] = Field(default_factory=list)
+    reports: List[MinervaValidationReport] = Field(default_factory=list)
+
+
+class ExtractionDetailResponse(BaseModel):
+    id: int
+    date: str
+    scope: List[str]
+    mode: str
+    source_model: str
+    content_hash: Optional[str] = None
+    raw_text: str
+    custom_focus: Optional[str] = None
+    catalysts_extracted: int = 0
+    events_extracted: int = 0
+    prices_extracted: int = 0
+    notes_created: int = 0
+    parse_status: str
+    created_at: Optional[str] = None
+    reports: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ReportDetailResponse(BaseModel):
+    run_id: str
+    ticker: str
+    extraction_id: Optional[int] = None
+    status: str
+    parse_status: Optional[str] = None
+    source_model: Optional[str] = None
+    content_hash: Optional[str] = None
+    raw_report: Optional[str] = None
+    failed_sections: List[str] = Field(default_factory=list)
+    section_names: List[str] = Field(default_factory=list)
+    header: Dict[str, Any] = Field(default_factory=dict)
+    sections: Dict[str, str] = Field(default_factory=dict)
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class PromptTemplateResponse(BaseModel):
+    slug: str
+    prompt_type: str
+    title: str
+    source_path: str
+    content: str
+    content_hash: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class PriceSnapshotBase(BaseModel):

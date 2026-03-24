@@ -168,6 +168,55 @@ This block is malformed and should remain visible in the stored raw report.
     assert "This block is malformed" in payload["raw_report"]
 
 
+def test_missing_decision_is_partial_and_preserves_other_sections(client):
+    assert client.post("/api/stocks", json=_stock_payload("MP")).status_code == 200
+    missing_decision = REPORT.replace(
+        """## DECISION
+| Field | Value |
+|-------|-------|
+| Verdict | BULLISH |
+| Conviction | 4 |
+| Action | BUY |
+| Entry Low | $23.50 |
+| Entry High | $24.80 |
+| Stop Loss | $20.80 |
+| Stop Basis | 2 ATR below entry |
+| Target | $30.00 |
+| Target Basis | Next resistance |
+| Timeframe | 1-3 weeks |
+| R:R Ratio | 1.8:1 |
+| Position Size | Standard |
+| Summary | Policy tailwinds and confirmed volume still support the setup. |
+
+""",
+        "",
+    )
+
+    response = client.post("/api/analysis/ingest", json={"raw_text": missing_decision, "source_model": "claude"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parse_status"] == "PARTIAL"
+    assert payload["reports"][0]["decision_stored"] is False
+    assert payload["reports"][0]["catalysts_stored"] == 1
+    assert payload["reports"][0]["events_stored"] == 1
+    stock = client.get("/api/stocks/MP")
+    assert stock.status_code == 200
+    assert stock.json()["current_verdict"] is None
+
+
+def test_repeat_ingest_reports_inserted_vs_updated_counts(client):
+    assert client.post("/api/stocks", json=_stock_payload("MP")).status_code == 200
+    first = client.post("/api/analysis/ingest", json={"raw_text": REPORT, "source_model": "claude"})
+    assert first.status_code == 200
+    second = client.post("/api/analysis/ingest", json={"raw_text": REPORT, "source_model": "claude"})
+    assert second.status_code == 200
+    report = second.json()["reports"][0]
+    assert report["catalysts_inserted"] == 0
+    assert report["catalysts_updated"] == 1
+    assert report["events_inserted"] == 0
+    assert report["events_updated"] == 1
+
+
 def test_ingest_refreshes_attention_flags_for_other_stocks(client):
     assert client.post("/api/stocks", json=_stock_payload("MP")).status_code == 200
     assert client.post("/api/stocks", json=_stock_payload("UUUU")).status_code == 200

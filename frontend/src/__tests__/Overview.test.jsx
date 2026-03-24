@@ -22,6 +22,7 @@ describe('Overview', () => {
             active_catalyst_count: 1,
             next_event_date: '2026-04-15',
             next_event_type: 'FUNDING_DECISION',
+            last_analysis_date: '2026-03-24T09:00:00Z',
             open_position_flag: false,
             needs_attention: false,
             alert_flag: true,
@@ -36,5 +37,6 @@ describe('Overview', () => {
     const link = await screen.findByRole('link', { name: /MP/i });
     expect(link.getAttribute('href')).toBe('#/stocks/MP');
     expect(screen.getByText(/\+5.2%/i)).toBeTruthy();
+    expect(screen.getByText(/Last analysis/i)).toBeTruthy();
   });
 });
