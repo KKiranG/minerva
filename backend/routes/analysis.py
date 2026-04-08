@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect, decode_json_field, fetch_all, fetch_one
-from ..http import pagination
+from ..http_utils import pagination
 from ..models import (
     AnalysisRunCreate,
     AnalysisRunIngestRequest,

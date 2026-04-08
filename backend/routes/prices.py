@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect, execute, fetch_all, fetch_one, utc_now
-from ..http import ensure_stock_exists, handle_integrity_error, pagination
+from ..http_utils import ensure_stock_exists, handle_integrity_error, pagination
 from ..models import PriceSnapshotCreate, PriceSnapshotPatch, PriceSnapshotResponse
 from .serializers import serialize_price_snapshot
 

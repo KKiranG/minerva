@@ -1,17 +1,7 @@
+import { STARTER_UNIVERSE } from './utils/constants';
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const ENABLE_MOCKS = import.meta.env.VITE_MINERVA_ENABLE_MOCKS === '1';
-
-const STARTER_UNIVERSE = [
-  { ticker: 'MP', company_name: 'MP Materials' },
-  { ticker: 'UUUU', company_name: 'Energy Fuels' },
-  { ticker: 'USAR', company_name: 'USA Rare Earth' },
-  { ticker: 'TMRC', company_name: 'Texas Mineral Resources' },
-  { ticker: 'LAC', company_name: 'Lithium Americas' },
-  { ticker: 'PLL', company_name: 'Piedmont Lithium' },
-  { ticker: 'ALB', company_name: 'Albemarle' },
-  { ticker: 'LYSCF', company_name: 'Lynas Rare Earths' },
-  { ticker: 'NIOBF', company_name: 'Niobay Metals' },
-];
 
 const mockDomain = {
   overview: { generated_at: '2026-03-24T00:00:00Z', stocks: [] },
@@ -38,7 +28,13 @@ async function request(path, { method = 'GET', body, signal, headers, rawBody } 
     body: body ? JSON.stringify(body) : rawBody,
   });
   const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json') ? await response.json() : await response.text();
+  let payload;
+  try {
+    payload = contentType.includes('application/json') ? await response.json() : await response.text();
+  } catch (error) {
+    throw new Error(`Invalid server response (Status ${response.status})`);
+  }
+
   if (!response.ok) {
     const detail = typeof payload === 'string' ? payload : payload?.detail || payload?.message || 'Request failed.';
     throw new Error(detail);
@@ -48,7 +44,7 @@ async function request(path, { method = 'GET', body, signal, headers, rawBody } 
 
 async function requestDedup(path, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
-  if (method !== 'GET') {
+  if (method !== 'GET' || options.signal) {
     return request(path, options);
   }
   const key = `${method}:${path}`;
@@ -78,6 +74,8 @@ export const api = {
   createStock: (payload, options = {}) => request('/api/stocks', { method: 'POST', body: payload, signal: options.signal }),
 
   getStock: (ticker, options = {}) => request(`/api/stocks/${encodeURIComponent(String(ticker).toUpperCase())}`, { signal: options.signal }),
+
+  patchStock: (ticker, payload, options = {}) => request(`/api/stocks/${encodeURIComponent(String(ticker).toUpperCase())}`, { method: 'PATCH', body: payload, signal: options.signal }),
 
   getThesisHistory: (ticker, { signal } = {}) =>
     requestDedup(`/api/stocks/${encodeURIComponent(String(ticker).toUpperCase())}/thesis-history`, { signal }),
@@ -156,6 +154,8 @@ export const api = {
   getExtraction: (extractionId, { signal } = {}) =>
     requestDedup(`/api/extractions/${encodeURIComponent(extractionId)}`, { signal }),
 
+  getRagContext: (query, { limit = 5, signal } = {}) => request(`/api/search/rag?q=${encodeURIComponent(query)}&limit=${limit}`, { signal }),
+
   getReport: (runId, { signal } = {}) =>
     requestDedup(`/api/reports/${encodeURIComponent(runId)}`, { signal }),
 
@@ -173,6 +173,39 @@ export const api = {
         href: `#/stocks/${item.ticker}`,
       })),
     })),
+
+  /** Trigger a browser CSV download for catalysts */
+  downloadCatalystsCsv: ({ ticker, binding_status, min_significance } = {}) => {
+    const url = `${API_BASE}/api/export/catalysts.csv${buildQuery({ ticker, binding_status, min_significance })}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = ticker ? `catalysts_${ticker}.csv` : 'catalysts_all.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+
+  /** Trigger a browser CSV download for research notes */
+  downloadResearchCsv: ({ ticker } = {}) => {
+    const url = `${API_BASE}/api/export/research.csv${buildQuery({ ticker })}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = ticker ? `research_${ticker}.csv` : 'research_all.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+
+  /** Trigger a browser CSV download for price snapshots */
+  downloadPricesCsv: ({ ticker } = {}) => {
+    const url = `${API_BASE}/api/export/prices.csv${buildQuery({ ticker })}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = ticker ? `prices_${ticker}.csv` : 'prices_all.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
 };
 
 export const starterUniverse = STARTER_UNIVERSE;

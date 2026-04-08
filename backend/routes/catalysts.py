@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect, execute, fetch_all, fetch_one, json_dumps, utc_now
-from ..http import ensure_stock_exists, handle_integrity_error, pagination, validate_catalyst_patch_fields
+from ..http_utils import ensure_stock_exists, handle_integrity_error, pagination, validate_catalyst_patch_fields
 from ..models import CatalystCreate, CatalystPatch, CatalystResponse
 from .serializers import serialize_catalyst
 

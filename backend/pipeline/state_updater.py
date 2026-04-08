@@ -168,7 +168,9 @@ async def update_state(conn, extraction_id: int | None, ticker: str, run_id: str
             (extraction_id, utc_now(), run_id),
         )
         await conn.commit()
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"update_state transaction failed: {e}")
         await conn.rollback()
         raise
 
@@ -183,7 +185,9 @@ async def refresh_state(conn, tickers: Iterable[str]) -> None:
             await _update_stock_snapshot(conn, ticker)
         await _recalculate_flags(conn)
         await conn.commit()
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"refresh_state transaction failed: {e}")
         await conn.rollback()
         raise
 

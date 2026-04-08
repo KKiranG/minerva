@@ -20,6 +20,7 @@ from ..parsers.extraction import (
     parse_rr_ratio,
 )
 from .ollama_fallback import OllamaFallbackClient
+from .webhooks import broadcast_sig5_catalysts
 
 
 NULL_TOKENS = {"", "N/A", "NA", "None", "none", "null", "—", "-", "n/a", "No options data available"}
@@ -400,6 +401,8 @@ async def _upsert_catalysts(
             updated += 1
         else:
             inserted += 1
+
+    await broadcast_sig5_catalysts(rows)
     return {"inserted": inserted, "updated": updated, "stored": inserted + updated}
 
 

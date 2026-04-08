@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 import { Badge, Button, PreBlock } from './Common';
 
 const toneForStatus = (value) => {
@@ -23,6 +26,7 @@ export default function RawDocumentViewer({
   onClose,
 }) {
   const [remoteState, setRemoteState] = useState({ status: 'idle', content: null, parseStatus: null, error: null });
+  const [viewRaw, setViewRaw] = useState(false);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -87,9 +91,16 @@ export default function RawDocumentViewer({
             </div>
             {subtitle ? <p className="max-w-3xl text-sm leading-6 text-slate-300">{subtitle}</p> : null}
           </div>
-          <Button type="button" onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex shrink-0 items-start gap-2 hidden md:flex">
+            {resolvedContent ? (
+              <Button type="button" tone={viewRaw ? 'primary' : 'secondary'} onClick={() => setViewRaw(!viewRaw)}>
+                {viewRaw ? 'Raw txt' : 'Rich txt'}
+              </Button>
+            ) : null}
+            <Button type="button" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </div>
         <div className="max-h-[calc(90vh-110px)] overflow-y-auto px-6 py-5">
           {loading ? (
@@ -101,7 +112,37 @@ export default function RawDocumentViewer({
               {remoteState.error}
             </div>
           ) : resolvedContent ? (
-            <PreBlock>{resolvedContent}</PreBlock>
+            viewRaw ? (
+               <PreBlock>{resolvedContent}</PreBlock>
+            ) : (
+               <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: ({node, ...props}) => <h1 className="mt-6 mb-4 text-2xl font-semibold text-white tracking-tight" {...props} />,
+                    h2: ({node, ...props}) => <h2 className="mt-8 mb-4 text-xl font-medium text-white tracking-tight" {...props} />,
+                    h3: ({node, ...props}) => <h3 className="mt-6 mb-3 text-lg font-medium text-white" {...props} />,
+                    p: ({node, ...props}) => <p className="mb-4 leading-7 text-slate-300" {...props} />,
+                    ul: ({node, ...props}) => <ul className="mb-4 list-disc space-y-1 pl-5 text-slate-300" {...props} />,
+                    ol: ({node, ...props}) => <ol className="mb-4 list-decimal space-y-1 pl-5 text-slate-300" {...props} />,
+                    li: ({node, ...props}) => <li {...props} />,
+                    code: ({node, inline, className, children, ...props}) => {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline ? (
+                        <pre className="mb-5 overflow-x-auto rounded-[20px] border border-white/10 bg-[#02070d] p-5"><code className="font-mono text-sm leading-relaxed text-sky-200" {...props}>{children}</code></pre>
+                      ) : (
+                        <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[13px] text-sky-100" {...props}>{children}</code>
+                      )
+                    },
+                    table: ({node, ...props}) => <div className="mb-6 overflow-x-auto rounded-[24px] border border-white/10"><table className="w-full text-left text-sm text-slate-300" {...props} /></div>,
+                    thead: ({node, ...props}) => <thead className="bg-white/[0.04]" {...props} />,
+                    th: ({node, ...props}) => <th className="border-b border-white/10 px-4 py-3 font-medium uppercase tracking-[0.15em] text-slate-400" {...props} />,
+                    td: ({node, ...props}) => <td className="border-b border-white/5 px-4 py-3" {...props} />,
+                    a: ({node, ...props}) => <a className="text-sky-400 underline decoration-sky-400/30 transition hover:decoration-sky-400" target="_blank" rel="noreferrer" {...props} />,
+                  }}
+               >
+                  {resolvedContent}
+               </ReactMarkdown>
+            )
           ) : (
             <div className="rounded-3xl border border-white/10 bg-white/[0.035] px-5 py-6 text-sm leading-6 text-slate-300">
               {emptyMessage}

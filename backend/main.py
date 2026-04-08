@@ -5,18 +5,22 @@ import os
 from pathlib import Path
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger(__name__)
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from backend.config import settings
     from backend.database import init_db
-    from backend.routes import analysis, catalysts, dashboard, events, extractions, health, journal, prices, prompts, reports, research, search, stocks
+    from backend.routes import analysis, catalysts, dashboard, events, export, extractions, health, journal, prices, prompts, reports, research, search, stocks
 else:
     from .config import settings
     from .database import init_db
-    from .routes import analysis, catalysts, dashboard, events, extractions, health, journal, prices, prompts, reports, research, search, stocks
+    from .routes import analysis, catalysts, dashboard, events, export, extractions, health, journal, prices, prompts, reports, research, search, stocks
 
 
 @asynccontextmanager
@@ -28,11 +32,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.app_name, version=os.getenv("MINERVA_VERSION", "3.0.0"), lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "message": str(exc)},
+    )
 
 app.include_router(stocks.router)
 app.include_router(catalysts.router)
@@ -45,5 +57,6 @@ app.include_router(analysis.router)
 app.include_router(reports.router)
 app.include_router(prompts.router)
 app.include_router(search.router)
+app.include_router(export.router)
 app.include_router(dashboard.router)
 app.include_router(health.router)

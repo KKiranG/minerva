@@ -11,6 +11,9 @@ frontend/dist/
 
 # Local data artifacts
 data/minerva.db
+data/*.db-wal
+data/*.db-shm
+data/.DS_Store
 data/agent_outputs/RUN_*/
 data/tasks/RUN_*/
 

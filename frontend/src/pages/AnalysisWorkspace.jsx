@@ -276,10 +276,18 @@ export default function AnalysisWorkspace({ api, stocks = [], onIngestComplete }
   const [selectedTicker, setSelectedTicker] = useState(stocks[0]?.ticker || 'MP');
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [dropActive, setDropActive] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
   const [viewerState, setViewerState] = useState(null);
   const fileInputRef = useRef(null);
   const busy = state.status === 'loading' || state.status === 'validating';
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHistoryRefreshToken((current) => current + 1);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!stocks.length) return;
@@ -413,14 +421,20 @@ export default function AnalysisWorkspace({ api, stocks = [], onIngestComplete }
               }}
               onDragEnter={(event) => {
                 event.preventDefault();
+                setDragCounter((prev) => prev + 1);
                 setDropActive(true);
               }}
               onDragLeave={(event) => {
-                if (event.currentTarget.contains(event.relatedTarget)) return;
-                setDropActive(false);
+                event.preventDefault();
+                setDragCounter((prev) => {
+                  const next = Math.max(0, prev - 1);
+                  if (next === 0) setDropActive(false);
+                  return next;
+                });
               }}
               onDrop={(event) => {
                 event.preventDefault();
+                setDragCounter(0);
                 setDropActive(false);
                 const file = event.dataTransfer.files?.[0];
                 readFile(file);

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -69,6 +70,17 @@ EVENT_DATE_PRECISIONS = {"EXACT", "WEEK", "MONTH", "QUARTER", "UNKNOWN"}
 EVENT_STATUSES = {"UPCOMING", "COMPLETE", "CANCELLED"}
 EXIT_REASONS = {"TARGET_HIT", "STOP_HIT", "THESIS_INVALIDATED", "TIME_EXPIRED", "PARTIAL_TAKE", "UPGRADED", "DOWNGRADED", "FORCED"}
 INGEST_MODES = {"FULL_SCAN", "DELTA"}
+
+
+class TradeDirection(str, Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+
+
+class TradeStatus(str, Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
 
 
 def _validate_choice(value: Optional[str], allowed: set[str], field_name: str) -> Optional[str]:
@@ -350,8 +362,8 @@ class ResearchNoteResponse(ResearchNoteCreate):
 class TradingJournalCreate(BaseModel):
     ticker: str
     run_id: Optional[str] = None
-    status: str
-    direction: str = "LONG"
+    status: TradeStatus
+    direction: TradeDirection = TradeDirection.LONG
     entry_date: Optional[str] = None
     exit_date: Optional[str] = None
     entry_price: Optional[float] = None

@@ -19,6 +19,7 @@ import {
   formatTickerLabel,
   verdictTone,
 } from '../components/Common';
+import StockChart from '../components/StockChart';
 import useAsyncResource from '../hooks/useAsyncResource';
 import { actionTone, asRelativeDate, countdownLabel, firstReadableLine, parseDate } from '../utils/formatters';
 
@@ -42,11 +43,7 @@ export default function StockDetail({ api, ticker, params }) {
   const journal = useAsyncResource((signal) => api.getJournal({ ticker, signal }), [ticker]);
   const thesisHistory = useAsyncResource((signal) => api.getThesisHistory(ticker, { signal }), [ticker]);
 
-  if (stock.status === 'loading' || stock.status === 'idle') return <LoadingState rows={8} />;
-  if (stock.status === 'error') return <EmptyState title="Stock unavailable" description={stock.error} />;
-  if (!stock.data) return <EmptyState title="Stock not found" description={`No stock record exists for ${ticker}.`} />;
-
-  const data = stock.data;
+  const data = stock.data || {};
   const latestRun = history.data?.[0] || null;
   const latestPrice = price.data || null;
 
@@ -83,12 +80,19 @@ export default function StockDetail({ api, ticker, params }) {
 
   useEffect(() => {
     const panel = params?.get('panel');
-    if (!panel) return;
-    const target = document.getElementById(`stock-panel-${panel}`);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [params, ticker]);
+    if (!panel || stock.status !== 'success') return;
+    const timeout = setTimeout(() => {
+      const target = document.getElementById(`stock-panel-${panel}`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+    return () => clearTimeout(timeout);
+  }, [params, ticker, stock.status]);
+
+  if (stock.status === 'loading' || stock.status === 'idle') return <LoadingState type="list" items={8} />;
+  if (stock.status === 'error') return <EmptyState title="Stock unavailable" description={stock.error} />;
+  if (!stock.data) return <EmptyState title="Stock not found" description={`No stock record exists for ${ticker}.`} />;
 
   return (
     <div className="space-y-6">
@@ -159,6 +163,10 @@ export default function StockDetail({ api, ticker, params }) {
             ]}
           />
         </PageSection>
+      </div>
+
+      <div id="stock-panel-chart">
+        <StockChart ticker={ticker} />
       </div>
 
       <div id="stock-panel-catalysts">
@@ -294,17 +302,32 @@ export default function StockDetail({ api, ticker, params }) {
         <SectionState state={thesisHistory} emptyTitle="No thesis history" emptyDescription={`No thesis evolution has been logged for ${data.ticker}.`}>
           {(items) => (
             <TimelineList
-              items={items.map((item) => ({
-                id: item.id,
-                title: item.summary || item.thesis_text || 'Stored thesis',
-                badge: item.verdict || 'THESIS',
-                badgeTone: verdictTone(item.verdict),
-                meta: [
-                  <span key="date">{asDate(item.as_of_date)}</span>,
-                  <span key="conviction">{convictionLabel(item.conviction)}</span>,
-                ],
-                body: item.thesis_text || 'No thesis text stored.',
-              }))}
+              items={items.map((item, i) => {
+                const prevItem = items[i + 1];
+                const deltaThesis = prevItem && prevItem.thesis_text !== item.thesis_text;
+                return {
+                  id: item.id,
+                  title: item.summary || (item.thesis_text ? 'Thesis logic update' : 'Stored thesis'),
+                  badge: item.verdict || 'THESIS',
+                  badgeTone: verdictTone(item.verdict),
+                  meta: [
+                    <span key="date">{asDate(item.as_of_date)}</span>,
+                    <span key="conviction">{convictionLabel(item.conviction)}</span>,
+                  ],
+                  body: (
+                    <div className="space-y-3">
+                      {deltaThesis ? (
+                        <div className="mb-2 rounded-xl border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-sm text-slate-400 line-through">
+                          {prevItem.thesis_text || 'None'}
+                        </div>
+                      ) : null}
+                      <div className={deltaThesis ? "rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-100" : "text-sm text-slate-200"}>
+                        {item.thesis_text || 'No thesis text stored.'}
+                      </div>
+                    </div>
+                  ),
+                };
+              })}
             />
           )}
         </SectionState>

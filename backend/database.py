@@ -352,6 +352,25 @@ SCHEMA_STATEMENTS = [
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """,
+    # FTS5 virtual table for fast full-text search on research notes
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS research_notes_fts
+    USING fts5(title, note_body, key_takeaway, content=research_notes, content_rowid=id)
+    """,
+    # Ingest performance audit log
+    """
+    CREATE TABLE IF NOT EXISTS ingest_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        extraction_id INTEGER,
+        ticker TEXT,
+        run_id TEXT,
+        operation TEXT NOT NULL,
+        duration_ms INTEGER,
+        tickers_processed TEXT,
+        parse_status TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
 ]
 
 INDEX_STATEMENTS = [
@@ -408,6 +427,7 @@ ADDITIONAL_COLUMNS = {
         "related_catalysts TEXT",
         "related_stocks TEXT",
         "tags TEXT",
+        "is_deleted INTEGER DEFAULT 0",
     ],
     "trading_journal": [
         "planned_timeframe TEXT",
@@ -571,3 +591,29 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         yield conn
     finally:
         await conn.close()
+
+
+async def log_audit(
+    conn: aiosqlite.Connection,
+    operation: str,
+    extraction_id: Optional[int] = None,
+    ticker: Optional[str] = None,
+    run_id: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    tickers_processed: Optional[str] = None,
+    parse_status: Optional[str] = None,
+) -> None:
+    """Record ingest performance and status into the audit log."""
+    try:
+        await conn.execute(
+            """
+            INSERT INTO ingest_audit_log
+                (extraction_id, ticker, run_id, operation, duration_ms, tickers_processed, parse_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (extraction_id, ticker, run_id, operation, duration_ms, tickers_processed, parse_status, utc_now()),
+        )
+        await conn.commit()
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(f"log_audit failed (non-fatal): {e}")

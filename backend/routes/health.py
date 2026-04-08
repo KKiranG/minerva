@@ -21,7 +21,9 @@ async def _ollama_available() -> bool:
             response = await client.get(tags_url)
             response.raise_for_status()
         return True
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Ollama health check failed: {e}")
         return False
 
 

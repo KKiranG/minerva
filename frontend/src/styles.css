@@ -1,1 +1,57 @@
 @import "tailwindcss";
+
+body.theme-light {
+  background-color: #f1f5f9 !important;
+  color: #1e293b !important;
+}
+
+.theme-light .bg-\[\#07121d\] {
+  background-color: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.theme-light .bg-\[\#07121d\]\/88 {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+  border-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .text-white {
+  color: #0f172a !important;
+}
+
+.theme-light .text-slate-300 {
+  color: #475569 !important;
+}
+
+.theme-light .text-slate-400 {
+  color: #64748b !important;
+}
+
+.theme-light .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.theme-light .border-white\/5 {
+  border-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .bg-white\/\[0\.03\] {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+}
+
+.theme-light .bg-white\/\[0\.035\] {
+  background-color: rgba(0, 0, 0, 0.035) !important;
+}
+
+.theme-light .bg-white\/5 {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .bg-white\/10 {
+  background-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.theme-light [class*="bg-[linear-gradient"] {
+  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(248,250,252,0.9)) !important;
+  border-color: rgba(0,0,0,0.1) !important;
+}

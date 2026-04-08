@@ -1,12 +1,12 @@
 import React from 'react';
 import { Badge, EmptyState, LoadingState, MetricCard, PageSection } from '../components/Common';
 import useAsyncResource from '../hooks/useAsyncResource';
-import { actionTone, asCurrency, asDate, asPercent, convictionLabel, verdictTone } from '../utils/formatters';
+import { actionTone, asCurrency, asDate, asPercent, convictionLabel, parseDate, verdictTone } from '../utils/formatters';
 
 const lastAnalysisLabel = (value) => {
   if (!value) return { primary: 'Never analysed', secondary: 'No stored decision date', tone: 'warning' };
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return { primary: 'Invalid date', secondary: value, tone: 'warning' };
+  const parsed = parseDate(value);
+  if (!parsed) return { primary: 'Invalid date', secondary: value, tone: 'warning' };
   const now = new Date();
   const dayDelta = Math.floor((now.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24));
   const freshness = dayDelta <= 1 ? 'Fresh' : dayDelta <= 7 ? 'Recent' : 'Stale';
@@ -69,8 +69,8 @@ export default function Overview({ api }) {
                       <Badge tone={verdictTone(stock.current_verdict)}>{stock.current_verdict || 'No verdict'}</Badge>
                       <Badge tone={actionTone(stock.current_action)}>{stock.current_action || 'No action'}</Badge>
                       <Badge tone={analysis.tone}>{analysis.freshness || 'Pending'}</Badge>
-                      {stock.alert_flag ? <Badge tone="danger">Alert</Badge> : null}
-                      {stock.needs_attention ? <Badge tone="warning">Needs attention</Badge> : null}
+                      {stock.alert_flag ? <Badge tone="danger" onClick={(e) => { e.preventDefault(); e.stopPropagation(); api.patchStock(stock.ticker, { alert_flag: false }).then(() => overview.reload()); }} title="Click to clear alert">Alert active</Badge> : null}
+                      {stock.needs_attention ? <Badge tone="warning" onClick={(e) => { e.preventDefault(); e.stopPropagation(); api.patchStock(stock.ticker, { needs_attention: false }).then(() => overview.reload()); }} title="Click to clear queue">Needs attention</Badge> : null}
                       {stock.changed_since_last_analysis ? <Badge tone="info">Changed</Badge> : null}
                     </div>
                     <p className="max-w-3xl text-sm leading-6 text-slate-300">{stock.one_line_summary || 'No one-line summary stored yet.'}</p>

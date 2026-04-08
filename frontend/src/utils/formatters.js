@@ -2,7 +2,14 @@ import { toneByAction, toneByVerdict } from './colors';
 
 export const parseDate = (value) => {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(String(value));
+  if (value instanceof Date) return value;
+  let str = String(value);
+  // If format is SQLite standard "YYYY-MM-DD HH:MM:SS", parse as UTC
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(str)) {
+    str = str.replace(' ', 'T');
+    if (!str.endsWith('Z') && !str.includes('+')) str += 'Z';
+  }
+  const date = new Date(str);
   return Number.isNaN(date.getTime()) ? null : date;
 };
 

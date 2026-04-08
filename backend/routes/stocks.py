@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect, execute, fetch_all, fetch_one, json_dumps, utc_now
-from ..http import handle_integrity_error, pagination, validate_stock_patch_fields
+from ..http_utils import handle_integrity_error, pagination, validate_stock_patch_fields
 from ..models import StockCreate, StockPatch, StockResponse
 from .serializers import serialize_stock
 

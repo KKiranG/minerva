@@ -36,7 +36,9 @@ class OllamaFallbackClient:
                 response = await client.post(self.base_url, json=payload)
                 response.raise_for_status()
                 data = response.json()
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Ollama fallback request failed: {e}")
             return None
         content = ((data.get("message") or {}).get("content") or "").strip()
         if not content:
@@ -45,5 +47,7 @@ class OllamaFallbackClient:
             import json
 
             return json.loads(content)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Ollama fallback JSON parse failed: {e}")
             return None

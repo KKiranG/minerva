@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect, execute, fetch_all, fetch_one, json_dumps, utc_now
-from ..http import ensure_stock_exists, handle_integrity_error, pagination
+from ..http_utils import ensure_stock_exists, handle_integrity_error, pagination
 from ..models import ResearchNoteCreate, ResearchNoteResponse
 from .serializers import serialize_research_note
 
@@ -43,9 +43,9 @@ async def list_research_notes(
         if date_to:
             clauses.append("created_at <= ?")
             params.append(date_to)
-        query = "SELECT * FROM research_notes"
+        query = "SELECT * FROM research_notes WHERE COALESCE(is_deleted, 0) = 0"
         if clauses:
-            query += " WHERE " + " AND ".join(clauses)
+            query += " AND " + " AND ".join(clauses)
         query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = await fetch_all(conn, query, params)
@@ -99,10 +99,15 @@ async def create_research_note(payload: ResearchNoteCreate):
 async def delete_research_note(note_id: int):
     conn = await connect()
     try:
-        existing = await fetch_one(conn, "SELECT id FROM research_notes WHERE id = ?", (note_id,))
+        existing = await fetch_one(conn, "SELECT id FROM research_notes WHERE id = ? AND COALESCE(is_deleted, 0) = 0", (note_id,))
         if not existing:
             raise HTTPException(status_code=404, detail="Research note not found")
-        await execute(conn, "DELETE FROM research_notes WHERE id = ?", (note_id,))
-        return {"message": "Research note deleted", "id": note_id}
+        # Soft delete: mark as deleted rather than destroying the row
+        await execute(
+            conn,
+            "UPDATE research_notes SET is_deleted = 1 WHERE id = ?",
+            (note_id,),
+        )
+        return {"message": "Research note soft-deleted", "id": note_id}
     finally:
         await conn.close()

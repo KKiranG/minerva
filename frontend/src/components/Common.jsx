@@ -27,8 +27,12 @@ export const PageSection = ({ title, subtitle, action, children }) => (
   </section>
 );
 
-export const Badge = ({ children, tone = 'neutral' }) => (
-  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${toneClasses[tone] || toneClasses.neutral}`}>
+export const Badge = ({ children, tone = 'neutral', onClick, className = '', ...props }) => (
+  <span 
+    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition ${toneClasses[tone] || toneClasses.neutral} ${onClick ? 'cursor-pointer hover:brightness-110' : ''} ${className}`}
+    onClick={onClick}
+    {...props}
+  >
     {children}
   </span>
 );
@@ -49,12 +53,13 @@ export const Button = ({ children, tone = 'secondary', className = '', ...props 
   );
 };
 
-export const TextInput = ({ className = '', ...props }) => (
+export const TextInput = React.forwardRef(({ className = '', ...props }, ref) => (
   <input
+    ref={ref}
     className={`w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/35 focus:bg-white/[0.075] ${className}`}
     {...props}
   />
-);
+));
 
 export const TextArea = ({ className = '', ...props }) => (
   <textarea
@@ -72,13 +77,51 @@ export const Select = ({ className = '', children, ...props }) => (
   </select>
 );
 
-export const LoadingState = ({ rows = 4 }) => (
-  <div className={`${basePanel} space-y-3`} style={panelStyle}>
-    {Array.from({ length: rows }).map((_, index) => (
-      <div key={index} className="h-4 animate-pulse rounded-full bg-white/10" />
-    ))}
-  </div>
-);
+export const LoadingState = ({ type = 'list', items = 3 }) => {
+  if (type === 'card') {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: items }).map((_, index) => (
+          <div key={index} className={`${basePanel} h-28 animate-pulse bg-white/5 border-white/5`} style={panelStyle} />
+        ))}
+      </div>
+    );
+  }
+  if (type === 'table') {
+    return (
+      <div className="overflow-hidden rounded-3xl border border-white/10">
+        <div className="h-10 bg-white/5 border-b border-white/10" />
+        {Array.from({ length: items }).map((_, index) => (
+          <div key={index} className="h-14 animate-pulse border-b border-white/5 bg-white/[0.02]" />
+        ))}
+      </div>
+    );
+  }
+  if (type === 'timeline') {
+    return (
+      <div className="space-y-4">
+        {Array.from({ length: items }).map((_, index) => (
+          <div key={index} className={`${basePanel} animate-pulse border-white/5 bg-white/[0.035] space-y-3`} style={panelStyle}>
+            <div className="flex gap-2">
+              <div className="h-4 w-1/3 rounded bg-white/10" />
+              <div className="h-4 w-16 rounded-full bg-white/10" />
+            </div>
+            <div className="h-3 w-1/4 rounded bg-white/10" />
+            <div className="h-3 w-5/6 rounded bg-white/5 mt-4" />
+            <div className="h-3 w-4/6 rounded bg-white/5" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className={`${basePanel} space-y-3`} style={panelStyle}>
+      {Array.from({ length: items }).map((_, index) => (
+        <div key={index} className="h-4 animate-pulse rounded-full bg-white/10" />
+      ))}
+    </div>
+  );
+};
 
 export const EmptyState = ({ title, description, action }) => (
   <div className={`${basePanel} space-y-3 text-center`} style={panelStyle}>
@@ -138,7 +181,9 @@ export const DecisionCard = ({
   const referencePrice = Number(currentPrice ?? entryHigh ?? entryLow);
   const upside = Number(target) - referencePrice;
   const downside = referencePrice - Number(stop);
-  const rr = upside > 0 && downside > 0 ? `${(upside / downside).toFixed(1)}x` : '—';
+  const rrValue = upside > 0 && downside > 0 ? (upside / downside) : 0;
+  const rr = rrValue > 0 ? `${rrValue.toFixed(1)}x` : '—';
+  const rrTone = rrValue >= 3 ? 'positive' : rrValue >= 1 ? 'info' : 'warning';
   return (
     <article className="rounded-[30px] border border-sky-300/15 bg-[linear-gradient(135deg,rgba(11,24,38,0.96),rgba(5,12,20,0.92))] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.32)]">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -160,7 +205,7 @@ export const DecisionCard = ({
           <MetricCard label="Current price" value={asCurrency(currentPrice)} />
           <MetricCard label="Entry zone" value={entryRangeLabel(entryLow, entryHigh)} />
           <MetricCard label="Stop / target" value={`${asCurrency(stop)} / ${asCurrency(target)}`} />
-          <MetricCard label="Timeframe / R:R" value={timeframe || '—'} caption={rr} tone="info" />
+          <MetricCard label="Timeframe / R:R" value={timeframe || '—'} caption={rr} tone={rrTone} />
         </div>
       </div>
     </article>

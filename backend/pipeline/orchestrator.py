@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from ..database import execute, fetch_one, utc_now
+from ..database import execute, fetch_one, log_audit, utc_now
 from ..models import MinervaIngestRequest
 from .extraction_ingest import ingest_minerva_document, ingest_minerva_into_existing_run
 from .state_updater import refresh_state, update_state
@@ -60,6 +60,15 @@ async def ingest_minerva_report(conn, payload: MinervaIngestRequest) -> Dict[str
         result["overall_status"] = result["parse_status"]
         result["total_time_ms"] = total_time_ms
         result["results"] = {report["ticker"]: dict(report) for report in result["reports"]}
+        # Performance audit log
+        await log_audit(
+            conn,
+            operation="ingest_minerva_report",
+            extraction_id=result.get("extraction_id"),
+            duration_ms=total_time_ms,
+            tickers_processed=",".join(result["tickers_processed"]),
+            parse_status=result["parse_status"],
+        )
         return result
 
 
