@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 
 import httpx
@@ -11,7 +10,6 @@ from ..database import connect, fetch_one, utc_now
 from ..models import HealthResponse
 
 router = APIRouter(prefix="/api", tags=["health"])
-logger = logging.getLogger(__name__)
 APP_VERSION = os.getenv("MINERVA_VERSION", "3.0.0")
 
 
@@ -24,7 +22,8 @@ async def _ollama_available() -> bool:
             response.raise_for_status()
         return True
     except Exception as e:
-        logger.warning(f"Ollama health check failed: {e}")
+        import logging
+        logging.getLogger(__name__).warning(f"Ollama health check failed: {e}")
         return False
 
 

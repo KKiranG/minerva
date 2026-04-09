@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import json
-import logging
 from typing import Any, Dict, Optional
 
 import httpx
 
 from ..config import settings
-
-logger = logging.getLogger(__name__)
 
 
 class OllamaFallbackClient:
@@ -41,13 +37,17 @@ class OllamaFallbackClient:
                 response.raise_for_status()
                 data = response.json()
         except Exception as e:
-            logger.warning(f"Ollama fallback request failed: {e}")
+            import logging
+            logging.getLogger(__name__).warning(f"Ollama fallback request failed: {e}")
             return None
         content = ((data.get("message") or {}).get("content") or "").strip()
         if not content:
             return None
         try:
+            import json
+
             return json.loads(content)
         except Exception as e:
-            logger.warning(f"Ollama fallback JSON parse failed: {e}")
+            import logging
+            logging.getLogger(__name__).warning(f"Ollama fallback JSON parse failed: {e}")
             return None

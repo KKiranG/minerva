@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from typing import Iterable
 
 from ..database import fetch_all, fetch_one, utc_now
-
-logger = logging.getLogger(__name__)
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
@@ -25,31 +22,9 @@ def _days_since(value: str | None) -> int:
     return (datetime.now(timezone.utc) - parsed).days
 
 
-async def _update_stock_snapshots_batch(conn, tickers: Iterable[str]) -> None:
-    if not tickers:
-        return
-
-    stamp = utc_now()
-    updates = []
-    for ticker in tickers:
-        stock_ticker = ticker.upper()
-        updates.append(
-            (
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stock_ticker,
-                stamp,
-                stock_ticker,
-            )
-        )
-
-    await conn.executemany(
+async def _update_stock_snapshot(conn, ticker: str) -> None:
+    stock_ticker = ticker.upper()
+    await conn.execute(
         """
         UPDATE stocks
         SET current_verdict = COALESCE((
@@ -118,7 +93,19 @@ async def _update_stock_snapshots_batch(conn, tickers: Iterable[str]) -> None:
             updated_at = ?
         WHERE ticker = ?
         """,
-        updates,
+        (
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            stock_ticker,
+            utc_now(),
+            stock_ticker,
+        ),
     )
 
 
@@ -168,7 +155,7 @@ async def _recalculate_flags(conn) -> None:
 async def update_state(conn, extraction_id: int | None, ticker: str, run_id: str) -> None:
     try:
         await conn.execute("BEGIN")
-        await _update_stock_snapshots_batch(conn, [ticker])
+        await _update_stock_snapshot(conn, ticker)
         await _recalculate_flags(conn)
         await conn.execute(
             """
@@ -182,7 +169,8 @@ async def update_state(conn, extraction_id: int | None, ticker: str, run_id: str
         )
         await conn.commit()
     except Exception as e:
-        logger.error(f"update_state transaction failed: {e}")
+        import logging
+        logging.getLogger(__name__).error(f"update_state transaction failed: {e}")
         await conn.rollback()
         raise
 
@@ -193,11 +181,13 @@ async def refresh_state(conn, tickers: Iterable[str]) -> None:
         return
     try:
         await conn.execute("BEGIN")
-        await _update_stock_snapshots_batch(conn, unique)
+        for ticker in unique:
+            await _update_stock_snapshot(conn, ticker)
         await _recalculate_flags(conn)
         await conn.commit()
     except Exception as e:
-        logger.error(f"refresh_state transaction failed: {e}")
+        import logging
+        logging.getLogger(__name__).error(f"refresh_state transaction failed: {e}")
         await conn.rollback()
         raise
 
