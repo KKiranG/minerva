@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
-from ..database import execute, fetch_one, json_dumps, sha256_text, utc_now
+from ..database import execute, executemany, fetch_all, fetch_one, json_dumps, sha256_text, utc_now
 from ..models import MinervaIngestRequest
 from ..parsers.extraction import (
     clean_value,
@@ -340,9 +340,10 @@ async def _upsert_catalysts(
     rows: List[Mapping[str, Any]],
     source: str,
 ) -> Dict[str, int]:
-    inserted = 0
-    updated = 0
+    valid_rows = []
+    tickers = set()
     seen_keys: set[tuple[str, str, str]] = set()
+
     for row in rows:
         normalized = _normalize_mapping(row)
         ticker = str(normalized.get("ticker") or "").upper().strip()
@@ -354,16 +355,81 @@ async def _upsert_catalysts(
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
-        stock = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker,))
-        if not stock:
-            continue
-        existing = await fetch_one(
-            conn,
-            "SELECT id FROM catalysts WHERE ticker = ? AND date = ? AND title = ?",
-            (ticker, date, title),
+        tickers.add(ticker)
+        valid_rows.append((ticker, date, title, normalized))
+
+    if not valid_rows:
+        return {"inserted": 0, "updated": 0, "stored": 0}
+
+    inserted = 0
+    updated = 0
+
+    # Process in batches to avoid SQLite parameter limits
+    BATCH_SIZE = 100
+    now = utc_now()
+
+    # Create a deterministic list of unique tickers for fetching valid stocks
+    unique_tickers_list = list(tickers)
+    valid_stock_tickers = set()
+
+    for i in range(0, len(unique_tickers_list), BATCH_SIZE):
+        batch_tickers = unique_tickers_list[i : i + BATCH_SIZE]
+        placeholders = ",".join("?" for _ in batch_tickers)
+        valid_stocks_rows = await fetch_all(
+            conn, f"SELECT ticker FROM stocks WHERE ticker IN ({placeholders})", batch_tickers
         )
-        now = utc_now()
-        await execute(
+        for r in valid_stocks_rows:
+            valid_stock_tickers.add(r["ticker"])
+
+    final_rows = []
+    for ticker, date, title, normalized in valid_rows:
+        if ticker in valid_stock_tickers:
+            final_rows.append((ticker, date, title, normalized))
+
+    if not final_rows:
+        return {"inserted": 0, "updated": 0, "stored": 0}
+
+    for i in range(0, len(final_rows), BATCH_SIZE):
+        batch_rows = final_rows[i : i + BATCH_SIZE]
+
+        # Fetch existing catalysts for just this batch using row values
+        values_placeholders = ", ".join(["(?, ?, ?)"] * len(batch_rows))
+        query_params = []
+        for ticker, date, title, _ in batch_rows:
+            query_params.extend([ticker, date, title])
+
+        existing_catalysts = await fetch_all(
+            conn,
+            f"SELECT ticker, date, title FROM catalysts WHERE (ticker, date, title) IN (VALUES {values_placeholders})",
+            query_params,
+        )
+        existing_keys = {(r["ticker"], r["date"], r["title"]) for r in existing_catalysts}
+
+        upsert_params = []
+        for ticker, date, title, normalized in batch_rows:
+            key = (ticker, date, title)
+            if key in existing_keys:
+                updated += 1
+            else:
+                inserted += 1
+
+            upsert_params.append((
+                ticker,
+                extraction_id,
+                run_id,
+                date,
+                _normalize_catalyst_category(normalized.get("category")),
+                title,
+                _clean_value(normalized.get("description")),
+                parse_currency(normalized.get("amount_usd")),
+                _normalize_binding(normalized.get("binding_status")),
+                _parse_int(normalized.get("significance") or normalized.get("significance_1to5")),
+                _clean_value(normalized.get("source")) or source,
+                now,
+                now,
+            ))
+
+        await executemany(
             conn,
             """
             INSERT INTO catalysts (
@@ -381,26 +447,8 @@ async def _upsert_catalysts(
                 source = COALESCE(excluded.source, catalysts.source),
                 updated_at = excluded.updated_at
             """,
-            (
-                ticker,
-                extraction_id,
-                run_id,
-                date,
-                _normalize_catalyst_category(normalized.get("category")),
-                title,
-                _clean_value(normalized.get("description")),
-                parse_currency(normalized.get("amount_usd")),
-                _normalize_binding(normalized.get("binding_status")),
-                _parse_int(normalized.get("significance") or normalized.get("significance_1to5")),
-                _clean_value(normalized.get("source")) or source,
-                now,
-                now,
-            ),
+            upsert_params,
         )
-        if existing:
-            updated += 1
-        else:
-            inserted += 1
 
     await broadcast_sig5_catalysts(rows)
     return {"inserted": inserted, "updated": updated, "stored": inserted + updated}
