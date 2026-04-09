@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Iterable
 
 from ..database import fetch_all, fetch_one, utc_now
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
@@ -169,8 +172,7 @@ async def update_state(conn, extraction_id: int | None, ticker: str, run_id: str
         )
         await conn.commit()
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"update_state transaction failed: {e}")
+        logger.error(f"update_state transaction failed: {e}")
         await conn.rollback()
         raise
 
@@ -186,8 +188,7 @@ async def refresh_state(conn, tickers: Iterable[str]) -> None:
         await _recalculate_flags(conn)
         await conn.commit()
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"refresh_state transaction failed: {e}")
+        logger.error(f"refresh_state transaction failed: {e}")
         await conn.rollback()
         raise
 
