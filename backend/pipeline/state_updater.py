@@ -25,9 +25,31 @@ def _days_since(value: str | None) -> int:
     return (datetime.now(timezone.utc) - parsed).days
 
 
-async def _update_stock_snapshot(conn, ticker: str) -> None:
-    stock_ticker = ticker.upper()
-    await conn.execute(
+async def _update_stock_snapshots_batch(conn, tickers: Iterable[str]) -> None:
+    if not tickers:
+        return
+
+    stamp = utc_now()
+    updates = []
+    for ticker in tickers:
+        stock_ticker = ticker.upper()
+        updates.append(
+            (
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stock_ticker,
+                stamp,
+                stock_ticker,
+            )
+        )
+
+    await conn.executemany(
         """
         UPDATE stocks
         SET current_verdict = COALESCE((
@@ -96,19 +118,7 @@ async def _update_stock_snapshot(conn, ticker: str) -> None:
             updated_at = ?
         WHERE ticker = ?
         """,
-        (
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            stock_ticker,
-            utc_now(),
-            stock_ticker,
-        ),
+        updates,
     )
 
 
@@ -158,7 +168,7 @@ async def _recalculate_flags(conn) -> None:
 async def update_state(conn, extraction_id: int | None, ticker: str, run_id: str) -> None:
     try:
         await conn.execute("BEGIN")
-        await _update_stock_snapshot(conn, ticker)
+        await _update_stock_snapshots_batch(conn, [ticker])
         await _recalculate_flags(conn)
         await conn.execute(
             """
@@ -183,8 +193,7 @@ async def refresh_state(conn, tickers: Iterable[str]) -> None:
         return
     try:
         await conn.execute("BEGIN")
-        for ticker in unique:
-            await _update_stock_snapshot(conn, ticker)
+        await _update_stock_snapshots_batch(conn, unique)
         await _recalculate_flags(conn)
         await conn.commit()
     except Exception as e:
