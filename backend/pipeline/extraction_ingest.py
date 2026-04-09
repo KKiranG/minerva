@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
-from ..database import execute, executemany, fetch_one, json_dumps, sha256_text, utc_now
+from ..database import execute, fetch_one, json_dumps, sha256_text, utc_now
 from ..models import MinervaIngestRequest
 from ..parsers.extraction import (
     clean_value,
@@ -285,7 +285,7 @@ async def _replace_options_activity(
     source: str,
 ) -> int:
     await execute(conn, "DELETE FROM options_activity WHERE run_id = ?", (run_id,))
-    to_insert = []
+    stored = 0
     for row in rows:
         normalized = _normalize_mapping(row)
         row_ticker = str(normalized.get("ticker") or ticker).upper().strip()
@@ -297,8 +297,14 @@ async def _replace_options_activity(
         open_interest = _parse_float(normalized.get("oi"))
         if not any([option_type, strike, expiry, volume, open_interest, notes]):
             continue
-
-        to_insert.append(
+        await execute(
+            conn,
+            """
+            INSERT INTO options_activity (
+                ticker, run_id, extraction_id, report_date, option_type, strike, expiry,
+                volume, open_interest, notes, raw_row, source, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             (
                 row_ticker,
                 run_id,
@@ -313,21 +319,10 @@ async def _replace_options_activity(
                 json_dumps(dict(row)),
                 source,
                 utc_now(),
-            )
+            ),
         )
-
-    if to_insert:
-        await executemany(
-            conn,
-            """
-            INSERT INTO options_activity (
-                ticker, run_id, extraction_id, report_date, option_type, strike, expiry,
-                volume, open_interest, notes, raw_row, source, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            to_insert,
-        )
-    return len(to_insert)
+        stored += 1
+    return stored
 
 
 async def _fallback_json(section_name: str, content: str, client: Optional[OllamaFallbackClient] = None) -> Optional[Any]:
