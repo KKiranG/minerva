@@ -69,14 +69,13 @@ export default function RawDocumentViewer({
     };
   }, [api, documentId, open]);
 
-  if (!open) return null;
-
   const resolvedStatus = remoteState.parseStatus || status;
   const resolvedContent = documentId ? remoteState.content : content;
   const loading = documentId && remoteState.status === 'loading';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+    open && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
       <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-[32px] border border-white/10 bg-[#07121d] shadow-[0_35px_90px_rgba(0,0,0,0.45)]">
         <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-5 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
@@ -151,5 +150,6 @@ export default function RawDocumentViewer({
         </div>
       </div>
     </div>
+    )
   );
 }
