@@ -13,13 +13,15 @@ export const parseDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 2,
+});
+
 export const asCurrency = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  }).format(Number(value));
+  return currencyFormatter.format(Number(value));
 };
 
 export const asPercent = (value, { signed = true } = {}) => {
@@ -31,22 +33,26 @@ export const asPercent = (value, { signed = true } = {}) => {
   return `${number > 0 ? '+' : '-'}${absolute}`;
 };
 
+const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
 export const asDate = (value) => {
   const date = parseDate(value);
   if (!date) return '—';
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  return dateFormatter.format(date);
 };
+
+const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
 
 export const asDateTime = (value) => {
   const date = parseDate(value);
   if (!date) return '—';
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
+  return dateTimeFormatter.format(date);
 };
 
 export const asRelativeDate = (value) => {
@@ -75,9 +81,11 @@ export const countdownLabel = (value, noun = 'event') => {
   return `${elapsed} day${elapsed === 1 ? '' : 's'} since ${cleanNoun}.`;
 };
 
+const compactNumberFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+
 export const asCompactNumber = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value));
+  return compactNumberFormatter.format(Number(value));
 };
 
 export const convictionLabel = (value) => {
