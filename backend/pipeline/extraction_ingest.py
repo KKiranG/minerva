@@ -4,7 +4,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
-from ..database import execute, fetch_one, json_dumps, sha256_text, utc_now
+from ..database import (
+    execute,
+    executemany,
+    fetch_all,
+    fetch_one,
+    json_dumps,
+    sha256_text,
+    utc_now,
+)
 from ..models import MinervaIngestRequest
 from ..parsers.extraction import (
     clean_value,
@@ -22,8 +30,18 @@ from ..parsers.extraction import (
 from .ollama_fallback import OllamaFallbackClient
 from .webhooks import broadcast_sig5_catalysts
 
-
-NULL_TOKENS = {"", "N/A", "NA", "None", "none", "null", "—", "-", "n/a", "No options data available"}
+NULL_TOKENS = {
+    "",
+    "N/A",
+    "NA",
+    "None",
+    "none",
+    "null",
+    "—",
+    "-",
+    "n/a",
+    "No options data available",
+}
 
 BINDING_STATUS_NORMALISATION = {
     "PROPOSED": "PROPOSED",
@@ -115,7 +133,9 @@ def _parse_ratio(value: Any) -> Optional[float]:
 
 
 def _report_date(value: Optional[str]) -> str:
-    return parse_iso_date(value) or value or datetime.now(timezone.utc).date().isoformat()
+    return (
+        parse_iso_date(value) or value or datetime.now(timezone.utc).date().isoformat()
+    )
 
 
 def _report_source(reports: Iterable[Mapping[str, Any]], fallback: str) -> str:
@@ -131,9 +151,15 @@ def _report_source(reports: Iterable[Mapping[str, Any]], fallback: str) -> str:
 def _decision_changed(stock: Mapping[str, Any], decision: Mapping[str, Any]) -> int:
     normalized_decision = _normalize_mapping(decision)
     comparisons = (
-        (stock.get("current_verdict"), _clean_value(normalized_decision.get("verdict"))),
+        (
+            stock.get("current_verdict"),
+            _clean_value(normalized_decision.get("verdict")),
+        ),
         (stock.get("current_action"), _clean_value(normalized_decision.get("action"))),
-        (stock.get("current_conviction"), _parse_int(normalized_decision.get("conviction"))),
+        (
+            stock.get("current_conviction"),
+            _parse_int(normalized_decision.get("conviction")),
+        ),
         (stock.get("current_thesis"), _clean_value(normalized_decision.get("summary"))),
         (stock.get("current_stop"), _parse_float(normalized_decision.get("stop_loss"))),
         (stock.get("current_target"), _parse_float(normalized_decision.get("target"))),
@@ -159,14 +185,18 @@ def _rows_are_placeholder(rows: Iterable[Mapping[str, Any]]) -> bool:
             cleaned = _clean_value(value)
             if cleaned:
                 material_values.append(cleaned.lower())
-    return bool(material_values) and all(value in {token.lower() for token in NULL_TOKENS} for value in material_values)
+    return bool(material_values) and all(
+        value in {token.lower() for token in NULL_TOKENS} for value in material_values
+    )
 
 
 def _normalize_binding(value: Any) -> str:
     cleaned = str(value or "").strip().replace(" ", "_")
     if not cleaned:
         return "PROPOSED"
-    return BINDING_STATUS_NORMALISATION.get(cleaned.upper(), normalize_binding_status(cleaned))
+    return BINDING_STATUS_NORMALISATION.get(
+        cleaned.upper(), normalize_binding_status(cleaned)
+    )
 
 
 def _normalize_catalyst_category(value: Any) -> str:
@@ -200,7 +230,16 @@ async def _insert_research_note(
             ticker, extraction_id, title, note_body, note_type, category, source, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (ticker, extraction_id, title, note_body, note_type, category, source, utc_now()),
+        (
+            ticker,
+            extraction_id,
+            title,
+            note_body,
+            note_type,
+            category,
+            source,
+            utc_now(),
+        ),
     )
 
 
@@ -250,7 +289,9 @@ async def _replace_thesis_log(
     narrative = _clean_value(sections.get("NARRATIVE"))
     if not narrative:
         return
-    normalized_decision = _normalize_mapping(parse_key_value_table(sections.get("DECISION", "")))
+    normalized_decision = _normalize_mapping(
+        parse_key_value_table(sections.get("DECISION", ""))
+    )
     summary = _clean_value(normalized_decision.get("summary"))
     await execute(conn, "DELETE FROM thesis_log WHERE run_id = ?", (run_id,))
     await execute(
@@ -325,7 +366,9 @@ async def _replace_options_activity(
     return stored
 
 
-async def _fallback_json(section_name: str, content: str, client: Optional[OllamaFallbackClient] = None) -> Optional[Any]:
+async def _fallback_json(
+    section_name: str, content: str, client: Optional[OllamaFallbackClient] = None
+) -> Optional[Any]:
     if not content.strip():
         return None
     parser = client or OllamaFallbackClient()
@@ -346,7 +389,9 @@ async def _upsert_catalysts(
     for row in rows:
         normalized = _normalize_mapping(row)
         ticker = str(normalized.get("ticker") or "").upper().strip()
-        date = parse_iso_date(normalized.get("date")) or _clean_value(normalized.get("date"))
+        date = parse_iso_date(normalized.get("date")) or _clean_value(
+            normalized.get("date")
+        )
         title = _clean_value(normalized.get("title"))
         if not ticker or not date or not title:
             continue
@@ -354,7 +399,9 @@ async def _upsert_catalysts(
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
-        stock = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker,))
+        stock = await fetch_one(
+            conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker,)
+        )
         if not stock:
             continue
         existing = await fetch_one(
@@ -391,7 +438,10 @@ async def _upsert_catalysts(
                 _clean_value(normalized.get("description")),
                 parse_currency(normalized.get("amount_usd")),
                 _normalize_binding(normalized.get("binding_status")),
-                _parse_int(normalized.get("significance") or normalized.get("significance_1to5")),
+                _parse_int(
+                    normalized.get("significance")
+                    or normalized.get("significance_1to5")
+                ),
                 _clean_value(normalized.get("source")) or source,
                 now,
                 now,
@@ -475,6 +525,9 @@ async def _upsert_price_snapshot(
     return True
 
 
+from ..database import executemany, fetch_all
+
+
 async def _upsert_events(
     conn,
     *,
@@ -485,75 +538,138 @@ async def _upsert_events(
     inserted = 0
     updated = 0
     seen_keys: set[tuple[str, str, str, str]] = set()
+
+    valid_rows = []
     for row in rows:
         normalized = _normalize_mapping(row)
         ticker = str(normalized.get("ticker") or "").upper().strip()
-        date = parse_iso_date(normalized.get("date")) or _clean_value(normalized.get("date"))
-        event_type = _clean_value(normalized.get("type") or normalized.get("event_type")) or "OTHER"
+        date = parse_iso_date(normalized.get("date")) or _clean_value(
+            normalized.get("date")
+        )
+        event_type = (
+            _clean_value(normalized.get("type") or normalized.get("event_type"))
+            or "OTHER"
+        )
         description = _clean_value(normalized.get("description"))
+
         if not ticker or not date or not description:
             continue
+
         dedupe_key = (ticker, date, event_type, description)
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
-        stock = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker,))
-        if not stock:
-            continue
-        existing = await fetch_one(
-            conn,
-            """
-            SELECT id
-            FROM upcoming_events
-            WHERE ticker = ? AND date = ? AND event_type = ? AND description = ?
-            """,
-            (ticker, date, event_type, description),
+
+        valid_rows.append(
+            {
+                "ticker": ticker,
+                "date": date,
+                "event_type": event_type,
+                "description": description,
+                "impact": _clean_value(normalized.get("impact")),
+                "source": _clean_value(normalized.get("source")) or source,
+                "bull_case": _clean_value(normalized.get("bull_case")),
+                "bear_case": _clean_value(normalized.get("bear_case")),
+                "dedupe_key": dedupe_key,
+            }
         )
-        if existing:
-            await execute(
-                conn,
-                """
-                UPDATE upcoming_events
-                SET extraction_id = ?, impact = ?, source = ?, bull_case = ?, bear_case = ?, status = ?
-                WHERE id = ?
-                """,
+
+    if not valid_rows:
+        return {"inserted": 0, "updated": 0, "stored": 0}
+
+    tickers = list({r["ticker"] for r in valid_rows})
+    placeholders = ",".join(["?"] * len(tickers))
+    valid_stocks_rows = await fetch_all(
+        conn, f"SELECT ticker FROM stocks WHERE ticker IN ({placeholders})", tickers
+    )
+    valid_stocks = {r["ticker"] for r in valid_stocks_rows}
+
+    valid_rows = [r for r in valid_rows if r["ticker"] in valid_stocks]
+
+    if not valid_rows:
+        return {"inserted": 0, "updated": 0, "stored": 0}
+
+    existing_map = {}
+    chunk_size = 100
+    for i in range(0, len(valid_rows), chunk_size):
+        chunk = valid_rows[i : i + chunk_size]
+        query_parts = []
+        params = []
+        for r in chunk:
+            query_parts.append(
+                "(ticker = ? AND date = ? AND event_type = ? AND description = ?)"
+            )
+            params.extend([r["ticker"], r["date"], r["event_type"], r["description"]])
+
+        where_clause = " OR ".join(query_parts)
+        query = f"SELECT id, ticker, date, event_type, description FROM upcoming_events WHERE {where_clause}"
+
+        existing_rows = await fetch_all(conn, query, params)
+        for er in existing_rows:
+            key = (er["ticker"], er["date"], er["event_type"], er["description"])
+            existing_map[key] = er["id"]
+
+    to_update = []
+    to_insert = []
+    now = utc_now()
+
+    for r in valid_rows:
+        key = r["dedupe_key"]
+        if key in existing_map:
+            to_update.append(
                 (
                     extraction_id,
-                    _clean_value(normalized.get("impact")),
-                    _clean_value(normalized.get("source")) or source,
-                    _clean_value(normalized.get("bull_case")),
-                    _clean_value(normalized.get("bear_case")),
+                    r["impact"],
+                    r["source"],
+                    r["bull_case"],
+                    r["bear_case"],
                     "UPCOMING",
-                    existing["id"],
-                ),
+                    existing_map[key],
+                )
             )
         else:
-            await execute(
-                conn,
-                """
-                INSERT INTO upcoming_events (
-                    ticker, extraction_id, date, date_precision, event_type, description,
-                    impact, source, bull_case, bear_case, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+            to_insert.append(
                 (
-                    ticker,
+                    r["ticker"],
                     extraction_id,
-                    date,
+                    r["date"],
                     "EXACT",
-                    event_type,
-                    description,
-                    _clean_value(normalized.get("impact")),
-                    _clean_value(normalized.get("source")) or source,
-                    _clean_value(normalized.get("bull_case")),
-                    _clean_value(normalized.get("bear_case")),
+                    r["event_type"],
+                    r["description"],
+                    r["impact"],
+                    r["source"],
+                    r["bull_case"],
+                    r["bear_case"],
                     "UPCOMING",
-                    utc_now(),
-                ),
+                    now,
+                )
             )
-            inserted += 1
-        if existing:
-            updated += 1
+
+    if to_update:
+        await executemany(
+            conn,
+            """
+            UPDATE upcoming_events
+            SET extraction_id = ?, impact = ?, source = ?, bull_case = ?, bear_case = ?, status = ?
+            WHERE id = ?
+            """,
+            to_update,
+        )
+        updated += len(to_update)
+
+    if to_insert:
+        await executemany(
+            conn,
+            """
+            INSERT INTO upcoming_events (
+                ticker, extraction_id, date, date_precision, event_type, description,
+                impact, source, bull_case, bear_case, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            to_insert,
+        )
+        inserted += len(to_insert)
+
     return {"inserted": inserted, "updated": updated, "stored": inserted + updated}
 
 
@@ -609,7 +725,11 @@ async def _update_run(
             _parse_float(normalized_decision.get("stop_loss")),
             _parse_float(normalized_decision.get("target")),
             _clean_value(normalized_decision.get("timeframe")),
-            _parse_ratio(normalized_decision.get("r_r_ratio") or normalized_decision.get("r_ratio") or normalized_decision.get("rr_ratio")),
+            _parse_ratio(
+                normalized_decision.get("r_r_ratio")
+                or normalized_decision.get("r_ratio")
+                or normalized_decision.get("rr_ratio")
+            ),
             _clean_value(normalized_decision.get("summary")),
             _clean_value(sections.get("NARRATIVE")),
             json_dumps(
@@ -652,7 +772,9 @@ async def _process_report(
 
     decision = parse_key_value_table(sections.get("DECISION", ""))
     if sections.get("DECISION") and not decision:
-        fallback = await _fallback_json("DECISION", sections["DECISION"], fallback_client)
+        fallback = await _fallback_json(
+            "DECISION", sections["DECISION"], fallback_client
+        )
         if isinstance(fallback, dict):
             decision = fallback
         if not decision:
@@ -662,7 +784,9 @@ async def _process_report(
 
     catalysts_rows = parse_markdown_table_block(sections.get("CATALYSTS", ""))
     if sections.get("CATALYSTS") and not catalysts_rows:
-        fallback = await _fallback_json("CATALYSTS", sections["CATALYSTS"], fallback_client)
+        fallback = await _fallback_json(
+            "CATALYSTS", sections["CATALYSTS"], fallback_client
+        )
         if isinstance(fallback, dict):
             catalysts_rows = list(fallback.get("rows") or fallback.get("items") or [])
         elif isinstance(fallback, list):
@@ -672,7 +796,9 @@ async def _process_report(
 
     price_data = parse_key_value_table(sections.get("PRICE_DATA", ""))
     if sections.get("PRICE_DATA") and not price_data:
-        fallback = await _fallback_json("PRICE_DATA", sections["PRICE_DATA"], fallback_client)
+        fallback = await _fallback_json(
+            "PRICE_DATA", sections["PRICE_DATA"], fallback_client
+        )
         if isinstance(fallback, dict):
             price_data = fallback
         if not price_data:
@@ -690,7 +816,9 @@ async def _process_report(
 
     tripwire_rows = parse_markdown_table_block(sections.get("TRIPWIRES", ""))
     if sections.get("TRIPWIRES") and not tripwire_rows:
-        fallback = await _fallback_json("TRIPWIRES", sections["TRIPWIRES"], fallback_client)
+        fallback = await _fallback_json(
+            "TRIPWIRES", sections["TRIPWIRES"], fallback_client
+        )
         if isinstance(fallback, dict):
             tripwire_rows = list(fallback.get("rows") or fallback.get("items") or [])
         elif isinstance(fallback, list):
@@ -699,7 +827,11 @@ async def _process_report(
             failed_sections.append("TRIPWIRES")
 
     options_rows = parse_markdown_table_block(sections.get("OPTIONS", ""))
-    if sections.get("OPTIONS") and not options_rows and "no options data available" not in sections["OPTIONS"].lower():
+    if (
+        sections.get("OPTIONS")
+        and not options_rows
+        and "no options data available" not in sections["OPTIONS"].lower()
+    ):
         fallback = await _fallback_json("OPTIONS", sections["OPTIONS"], fallback_client)
         if isinstance(fallback, dict):
             options_rows = list(fallback.get("rows") or fallback.get("items") or [])
@@ -724,7 +856,9 @@ async def _process_report(
         date=report_date,
         data=price_data,
     )
-    event_counts = await _upsert_events(conn, extraction_id=extraction_id, rows=list(event_rows), source=source)
+    event_counts = await _upsert_events(
+        conn, extraction_id=extraction_id, rows=list(event_rows), source=source
+    )
     options_stored = await _replace_options_activity(
         conn,
         ticker=ticker,
@@ -829,9 +963,22 @@ async def _process_report(
 
     has_material_content = any(
         str(sections.get(name) or "").strip()
-        for name in ("NARRATIVE", "CATALYSTS", "PRICE_DATA", "EVENTS", "OPTIONS", "TRIPWIRES", "NOTES", "DECISION")
+        for name in (
+            "NARRATIVE",
+            "CATALYSTS",
+            "PRICE_DATA",
+            "EVENTS",
+            "OPTIONS",
+            "TRIPWIRES",
+            "NOTES",
+            "DECISION",
+        )
     )
-    parse_status = "COMPLETE" if decision and not failed_sections else ("PARTIAL" if has_material_content else "FAILED")
+    parse_status = (
+        "COMPLETE"
+        if decision and not failed_sections
+        else ("PARTIAL" if has_material_content else "FAILED")
+    )
     changed_since_last_analysis = _decision_changed(stock or {}, decision)
     await _update_run(
         conn,
@@ -865,17 +1012,25 @@ async def _process_report(
     }
 
 
-async def ingest_minerva_document(conn, payload: MinervaIngestRequest, create_run_fn) -> Dict[str, Any]:
+async def ingest_minerva_document(
+    conn, payload: MinervaIngestRequest, create_run_fn
+) -> Dict[str, Any]:
     reports = parse_minerva_document(payload.raw_text)
     if not reports:
         raise ValueError("No MINERVA_REPORT blocks were found.")
 
-    scope = [str(report["header"].get("ticker") or "").upper() for report in reports if report["header"].get("ticker")]
+    scope = [
+        str(report["header"].get("ticker") or "").upper()
+        for report in reports
+        if report["header"].get("ticker")
+    ]
     if not scope:
         raise ValueError("No ticker headers were found in the MINERVA report.")
 
     for ticker in sorted(set(scope)):
-        row = await fetch_one(conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker,))
+        row = await fetch_one(
+            conn, "SELECT ticker FROM stocks WHERE ticker = ?", (ticker,)
+        )
         if not row:
             raise ValueError(f"Ticker '{ticker}' does not exist in stocks.")
 
@@ -955,13 +1110,22 @@ async def ingest_minerva_document(conn, payload: MinervaIngestRequest, create_ru
     }
 
 
-async def ingest_minerva_into_existing_run(conn, run: Mapping[str, Any], document: str, source_model: str) -> Dict[str, Any]:
+async def ingest_minerva_into_existing_run(
+    conn, run: Mapping[str, Any], document: str, source_model: str
+) -> Dict[str, Any]:
     reports = parse_minerva_document(document)
     if not reports:
         raise ValueError("No MINERVA_REPORT blocks were found.")
 
     ticker = str(run["ticker"]).upper()
-    selected = next((report for report in reports if str(report["header"].get("ticker") or "").upper() == ticker), reports[0])
+    selected = next(
+        (
+            report
+            for report in reports
+            if str(report["header"].get("ticker") or "").upper() == ticker
+        ),
+        reports[0],
+    )
     extraction_id = run.get("extraction_id")
     if extraction_id is None:
         extraction_id = await execute(
@@ -976,7 +1140,8 @@ async def ingest_minerva_into_existing_run(conn, run: Mapping[str, Any], documen
                 _report_date(selected["header"].get("date")),
                 ticker,
                 run.get("mode") or "DELTA",
-                _clean_value((selected.get("header") or {}).get("source")) or source_model,
+                _clean_value((selected.get("header") or {}).get("source"))
+                or source_model,
                 document,
                 json_dumps([selected]),
                 sha256_text(document),
@@ -988,7 +1153,11 @@ async def ingest_minerva_into_existing_run(conn, run: Mapping[str, Any], documen
                 utc_now(),
             ),
         )
-        await execute(conn, "UPDATE analysis_runs SET extraction_id = ? WHERE run_id = ?", (extraction_id, run["run_id"]))
+        await execute(
+            conn,
+            "UPDATE analysis_runs SET extraction_id = ? WHERE run_id = ?",
+            (extraction_id, run["run_id"]),
+        )
 
     async def _reuse_run(_conn, _ticker, _extraction_id, _mode, _notes):
         return {"run_id": run["run_id"], "ticker": ticker}
