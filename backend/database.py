@@ -519,11 +519,13 @@ async def _dedupe_price_snapshots(conn: aiosqlite.Connection) -> None:
 
 async def _backfill_content_hashes(conn: aiosqlite.Connection) -> None:
     rows = await fetch_all(conn, "SELECT id, raw_text FROM extractions WHERE content_hash IS NULL OR content_hash = ''")
-    for row in rows:
-        await conn.execute(
-            "UPDATE extractions SET content_hash = ? WHERE id = ?",
-            (sha256_text(row.get("raw_text") or ""), row["id"]),
-        )
+    if not rows:
+        return
+    params = [(sha256_text(row.get("raw_text") or ""), row["id"]) for row in rows]
+    await conn.executemany(
+        "UPDATE extractions SET content_hash = ? WHERE id = ?",
+        params
+    )
 
 
 async def fetch_all(conn: aiosqlite.Connection, query: str, params: Iterable[Any] = ()) -> List[Mapping[str, Any]]:
