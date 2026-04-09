@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import hashlib
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from typing import Any, AsyncGenerator, Iterable, List, Mapping, Optional, Seque
 import aiosqlite
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA_STATEMENTS = [
@@ -615,5 +618,4 @@ async def log_audit(
         )
         await conn.commit()
     except Exception as e:
-        import logging as _logging
-        _logging.getLogger(__name__).warning(f"log_audit failed (non-fatal): {e}")
+        logger.warning(f"log_audit failed (non-fatal): {e}")
